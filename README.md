@@ -1,73 +1,139 @@
-# Welcome to your Lovable project
+# 🛡️ CredVault
 
-## Project info
+### **Secure, Decentralized Credential Management on the Blockchain**
 
-**URL**: https://lovable.dev/projects/fe841239-fb3a-4544-b53c-b5d0588188a3
+[![Built with Lovable](https://img.shields.io/badge/Built%20with-Lovable-blue?style=flat-square)](https://lovable.dev)
+[![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![React](https://img.shields.io/badge/React-20232A?style=flat-square&logo=react&logoColor=61DAFB)](https://reactjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=flat-square&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
+[![Solidity](https://img.shields.io/badge/Solidity-%23363636.svg?style=flat-square&logo=solidity&logoColor=white)](https://docs.soliditylang.org/)
+[![Foundry](https://img.shields.io/badge/Foundry-f0f0f0?style=flat-square&logo=rust&logoColor=black)](https://book.getfoundry.sh/)
 
-## How can I edit this code?
+---
 
-There are several ways of editing your application.
+## 🌟 Overview
 
-**Use Lovable**
+**CredVault** is a next-generation blockchain-powered platform designed for the secure issuance, storage, and verification of academic and professional credentials. By leveraging the **Polygon** network, CredVault ensures that every credential is immutable, transparent, and instantly verifiable from anywhere in the world.
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/fe841239-fb3a-4544-b53c-b5d0588188a3) and start prompting.
+> "Own your education. Verify globally."
 
-Changes made via Lovable will be committed automatically to this repo.
+---
 
-**Use your preferred IDE**
+## ✨ Key Features
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+-   🔒 **Blockchain-Powered Security**: Immutable storage on the Polygon network ensures credentials can never be forged or altered.
+-   🌍 **Instant Global Verification**: Verify credentials in seconds using document hashes or QR codes.
+-   🏛️ **Institution Dashboard**: A dedicated portal for authorized educational institutions to issue and manage digital credentials.
+-   🎓 **Student Personal Vault**: A secure space for students to access, manage, and share their verified accomplishments.
+-   🕵️ **Public Verifier Portal**: Easy-to-use interface for employers and third parties to validate the authenticity of credentials.
+-   🔑 **Smart Contract Governance**: Robust role-based access control (RBAC) managing issuers and administrators.
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+---
 
-Follow these steps:
+## 🛠️ Tech Stack
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+### **Frontend**
+- **Framework**: [React](https://reactjs.org/) + [Vite](https://vitejs.dev/)
+- **Language**: [TypeScript](https://www.typescriptlang.org/)
+- **Styling**: [Tailwind CSS](https://tailwindcss.com/)
+- **UI Components**: [shadcn/ui](https://ui.shadcn.com/) (Radix UI)
+- **Icons**: [Lucide React](https://lucide.dev/)
+- **Blockchain Interaction**: [Ethers.js](https://docs.ethers.org/v6/)
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+### **Backend & Blockchain**
+- **Smart Contracts**: [Solidity](https://docs.soliditylang.org/)
+- **Development Framework**: [Foundry](https://book.getfoundry.sh/) (Forge, Anvil, Cast)
+- **Network**: [Polygon](https://polygon.technology/) (Compatible with any EVM chain)
 
-# Step 3: Install the necessary dependencies.
-npm i
+---
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+## 📁 Project Structure
+
+```text
+CredVault/
+├── Backend-Contracts/      # Solidity smart contracts & Foundry setup
+│   ├── src/                # Smart contract source code
+│   ├── test/               # Contract test suites
+│   └── script/             # Deployment scripts
+├── src/                    # Frontend React application
+│   ├── components/         # Reusable UI components
+│   ├── pages/              # Main application pages
+│   ├── hooks/              # Custom React hooks
+│   └── lib/                # Utility functions & configurations
+├── public/                 # Static assets
+└── tailwind.config.js      # Styling configuration
+```
+
+---
+
+## 🚀 Getting Started
+
+### **1. Clone the Repository**
+```bash
+git clone https://github.com/Rkhooda07/CredVault.git
+cd CredVault
+```
+
+### **2. Frontend Setup**
+```bash
+# Install dependencies
+npm install
+
+# Start development server
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+### **3. Smart Contract Setup (Foundry)**
+```bash
+cd Backend-Contracts
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+# Build contracts
+forge build
 
-**Use GitHub Codespaces**
+# Run tests
+forge test
+```
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+---
 
-## What technologies are used for this project?
+## 🛡️ Security & Verification
 
-This project is built with:
+CredVault uses a cryptographic hashing mechanism. When an institution issues a credential, a unique hash of the document is stored on-chain. Verification involves re-hashing the provided document and comparing it with the on-chain record, ensuring 100% integrity.
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+---
 
-## How can I deploy this project?
+## 🌐 Deployment
 
-Simply open [Lovable](https://lovable.dev/projects/fe841239-fb3a-4544-b53c-b5d0588188a3) and click on Share -> Publish.
+### **Frontend**
+The frontend is configured for deployment via [GitHub Pages](https://pages.github.com/).
+```bash
+npm run deploy
+```
 
-## Can I connect a custom domain to my Lovable project?
+### **Smart Contracts**
+Contracts can be deployed to the Polygon network (or any EVM-compatible chain) using the deployment scripts in `Backend-Contracts/script/`.
 
-Yes, you can!
+---
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## 🤝 Contributing
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+Contributions are what make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+---
+
+## 📄 License
+
+Distributed under the MIT License. See `LICENSE` for more information.
+
+---
+
+<p align="center">
+  Built with ❤️ by <a href="https://github.com/Rkhooda07">Rkhooda07</a>
+</p>
