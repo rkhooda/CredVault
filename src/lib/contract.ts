@@ -195,10 +195,13 @@ export const CONTRACT_ADDRESS: string =
 export const CHAIN_ID: number =
   Number((import.meta.env.VITE_CHAIN_ID as string | undefined) ?? 11155111);
 
-// Public Sepolia RPC — no API key required. Override with VITE_RPC_URL for a private endpoint.
+// Public Sepolia RPCs — no API key required. Override primary with VITE_RPC_URL.
+// FallbackProvider tries both concurrently (quorum=1), using whichever responds first.
 export const RPC_URL: string =
   (import.meta.env.VITE_RPC_URL as string | undefined) ??
-  "https://rpc.ankr.com/eth_sepolia";
+  "https://ethereum-sepolia-rpc.publicnode.com";
+
+const FALLBACK_RPC_URL = "https://sepolia.drpc.org";
 
 /** Returns a contract instance connected to the given provider or signer. */
 export function getContract(providerOrSigner: ethers.ContractRunner) {
@@ -207,10 +210,18 @@ export function getContract(providerOrSigner: ethers.ContractRunner) {
 
 /**
  * Returns a read-only provider pointing at Sepolia.
+ * Uses two public endpoints concurrently (quorum=1) for resilience.
  * Used for view calls that don't require a connected wallet.
  */
-export function getReadOnlyProvider(): ethers.JsonRpcProvider {
-  return new ethers.JsonRpcProvider(RPC_URL);
+export function getReadOnlyProvider(): ethers.AbstractProvider {
+  return new ethers.FallbackProvider(
+    [
+      new ethers.JsonRpcProvider(RPC_URL, CHAIN_ID, { staticNetwork: true }),
+      new ethers.JsonRpcProvider(FALLBACK_RPC_URL, CHAIN_ID, { staticNetwork: true }),
+    ],
+    CHAIN_ID,
+    { quorum: 1 },
+  );
 }
 
 /**
