@@ -55,6 +55,7 @@ export default function InstitutionDashboard() {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<IssuedCredential[]>([]);
   const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [issuing, setIssuing] = useState(false);
   const [issueStatus, setIssueStatus] = useState("");
   const [issueError, setIssueError] = useState("");
@@ -67,6 +68,7 @@ export default function InstitutionDashboard() {
 
   const fetchCredentials = useCallback(async (issuer: string) => {
     setLoading(true);
+    setFetchError(null);
     try {
       const provider = getReadOnlyProvider();
       const contract = getContract(provider);
@@ -106,7 +108,7 @@ export default function InstitutionDashboard() {
       setCredentials(list);
     } catch (err) {
       console.error("Failed to fetch credentials:", err);
-      toast({ title: "Error", description: "Could not load credentials from chain.", variant: "destructive" });
+      setFetchError("Could not load credentials from chain. Check your connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -427,7 +429,19 @@ export default function InstitutionDashboard() {
                     <p className="text-muted-foreground text-sm">Loading credentials from chain…</p>
                   </div>
                 )}
-                {!loading && filteredCredentials.map((credential) => (
+                {!loading && fetchError && (
+                  <div className="text-center py-8">
+                    <p className="text-destructive text-sm mb-3">{fetchError}</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => walletAddress && fetchCredentials(walletAddress)}
+                    >
+                      Retry
+                    </Button>
+                  </div>
+                )}
+                {!loading && !fetchError && filteredCredentials.map((credential) => (
                   <div
                     key={credential.id}
                     className="bg-muted/30 border border-border/50 rounded-lg p-4 hover:bg-muted/50 transition-colors"
@@ -479,7 +493,7 @@ export default function InstitutionDashboard() {
                 ))}
               </div>
 
-              {!loading && filteredCredentials.length === 0 && (
+              {!loading && !fetchError && filteredCredentials.length === 0 && (
                 <div className="text-center py-8">
                   <Award className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
                   <h3 className="font-semibold mb-2">No credentials found</h3>

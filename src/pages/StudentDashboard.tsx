@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -44,6 +44,7 @@ export default function StudentDashboard() {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // QR dialog: null = closed, Credential = open for that credential
   const [qrCredential, setQrCredential] = useState<Credential | null>(null);
@@ -54,63 +55,58 @@ export default function StudentDashboard() {
     if (address) setWalletAddress(address);
   }, []);
 
-  useEffect(() => {
-    if (!walletAddress) return;
+  const fetchCredentials = useCallback(async (address: string) => {
+    setLoading(true);
+    setFetchError(null);
+    try {
+      const provider = getReadOnlyProvider();
+      const contract = getContract(provider);
 
-    async function fetchCredentials() {
-      setLoading(true);
-      try {
-        const provider = getReadOnlyProvider();
-        const contract = getContract(provider);
+      // Scan from deployment block so we never miss any events.
+      // Both holder params are indexed, so the RPC only returns logs for this wallet.
+      const [issuedEvents, revokedEvents] = await Promise.all([
+        contract.queryFilter(contract.filters.CredentialIssued(address), DEPLOYMENT_BLOCK),
+        contract.queryFilter(contract.filters.CredentialRevoked(address), DEPLOYMENT_BLOCK),
+      ]);
 
-        // Scan from deployment block so we never miss any events.
-        // Both holder params are indexed, so Ankr only returns logs for this wallet.
-        const [issuedEvents, revokedEvents] = await Promise.all([
-          contract.queryFilter(contract.filters.CredentialIssued(walletAddress), DEPLOYMENT_BLOCK),
-          contract.queryFilter(contract.filters.CredentialRevoked(walletAddress), DEPLOYMENT_BLOCK),
-        ]);
+      // O(1) revocation check
+      const revokedHashes = new Set(revokedEvents.map((e) => (e as any).args.documentHash));
 
-        // O(1) revocation check
-        const revokedHashes = new Set(revokedEvents.map((e) => (e as any).args.documentHash));
+      const list: Credential[] = issuedEvents.map((e) => {
+        const { holder, issuer, documentHash, timestamp } = (e as any).args;
 
-        const list: Credential[] = issuedEvents.map((e) => {
-          const { holder, issuer, documentHash, timestamp } = (e as any).args;
+        // Merge localStorage metadata written by InstitutionDashboard at issuance.
+        // Falls back gracefully when issuing from a different browser/device.
+        const meta = localStorage.getItem(`credvault_meta_${documentHash}`);
+        const parsed = meta ? JSON.parse(meta) : null;
 
-          // Merge localStorage metadata written by InstitutionDashboard at issuance.
-          // Falls back gracefully when issuing from a different browser/device.
-          const meta = localStorage.getItem(`credvault_meta_${documentHash}`);
-          const parsed = meta ? JSON.parse(meta) : null;
+        return {
+          id: e.transactionHash,
+          title: parsed?.title ?? "Verified Credential",
+          // meta.issuer is the human-readable address stored at issuance time
+          issuer: parsed?.issuer ?? issuer,
+          // meta stores ISO timestamp; fall back to on-chain timestamp (seconds → ms)
+          dateIssued: parsed?.issuedAt ?? new Date(Number(timestamp) * 1000).toISOString(),
+          status: revokedHashes.has(documentHash) ? "revoked" : "verified",
+          type: parsed?.type ?? "Credential",
+          transactionHash: e.transactionHash,
+          documentHash,
+          holderAddress: holder,
+        };
+      });
 
-          return {
-            id: e.transactionHash,
-            title: parsed?.title ?? "Verified Credential",
-            // meta.issuer is the human-readable address stored at issuance time
-            issuer: parsed?.issuer ?? issuer,
-            // meta stores ISO timestamp; fall back to on-chain timestamp (seconds → ms)
-            dateIssued: parsed?.issuedAt ?? new Date(Number(timestamp) * 1000).toISOString(),
-            status: revokedHashes.has(documentHash) ? "revoked" : "verified",
-            type: parsed?.type ?? "Credential",
-            transactionHash: e.transactionHash,
-            documentHash,
-            holderAddress: holder,
-          };
-        });
-
-        setCredentials(list);
-      } catch (err) {
-        console.error("Failed to fetch credentials:", err);
-        toast({
-          title: "Error",
-          description: "Could not load credentials from chain.",
-          variant: "destructive",
-        });
-      } finally {
-        setLoading(false);
-      }
+      setCredentials(list);
+    } catch (err) {
+      console.error("Failed to fetch credentials:", err);
+      setFetchError("Could not load credentials from chain. Check your connection and try again.");
+    } finally {
+      setLoading(false);
     }
+  }, []);
 
-    fetchCredentials();
-  }, [walletAddress]);
+  useEffect(() => {
+    if (walletAddress) fetchCredentials(walletAddress);
+  }, [walletAddress, fetchCredentials]);
 
   // Generate QR data URL whenever the dialog opens for a credential.
   // QR payload format: JSON { holder, documentHash }
@@ -268,7 +264,7 @@ export default function StudentDashboard() {
         )}
 
         {/* Credentials Grid */}
-        {!loading && (
+        {!loading && !fetchError && (
           <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
             {filteredCredentials.map((credential) => (
               <Card key={credential.id} className="credential-card p-6 hover:scale-105 transition-all duration-300">
@@ -334,7 +330,20 @@ export default function StudentDashboard() {
           </div>
         )}
 
-        {!loading && filteredCredentials.length === 0 && (
+        {!loading && fetchError && (
+          <div className="text-center py-12">
+            <div className="w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <XCircle className="w-8 h-8 text-destructive" />
+            </div>
+            <h3 className="text-lg font-semibold mb-2">Failed to load credentials</h3>
+            <p className="text-muted-foreground mb-4">{fetchError}</p>
+            <Button variant="outline" onClick={() => walletAddress && fetchCredentials(walletAddress)}>
+              Retry
+            </Button>
+          </div>
+        )}
+
+        {!loading && !fetchError && filteredCredentials.length === 0 && (
           <div className="text-center py-12">
             <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
               <Search className="w-8 h-8 text-muted-foreground" />
