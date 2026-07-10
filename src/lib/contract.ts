@@ -184,6 +184,9 @@ export const CREDENTIAL_VAULT_ABI = [
   },
 ] as const;
 
+// Block at which the contract was deployed — used as the floor for event-log scans.
+export const DEPLOYMENT_BLOCK = 9654189; // 0x934fad on Sepolia
+
 // Fall back to hardcoded constants so the app works without a .env.local on other machines
 export const CONTRACT_ADDRESS: string =
   (import.meta.env.VITE_CONTRACT_ADDRESS as string | undefined) ??
