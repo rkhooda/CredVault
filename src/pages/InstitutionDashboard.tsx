@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -18,7 +18,7 @@ import {
   Upload
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { getContract, computeDocumentHash, ensureSepolia } from "@/lib/contract";
+import { getContract, getReadOnlyProvider, computeDocumentHash, ensureSepolia, DEPLOYMENT_BLOCK } from "@/lib/contract";
 
 interface IssuedCredential {
   id: string;
@@ -32,37 +32,6 @@ interface IssuedCredential {
   status: "issued" | "pending" | "revoked";
   transactionHash?: string;
 }
-
-// Seed entries shown before any on-chain issuances have been made in this session.
-// New issuances are prepended in local state; the list is not yet synced from chain.
-const MOCK_CREDENTIALS: IssuedCredential[] = [
-  {
-    id: "1",
-    studentName: "Alice Johnson",
-    studentWallet: "0x1234...abcd",
-    credentialTitle: "Bachelor of Computer Science",
-    dateIssued: "2024-05-15",
-    status: "issued",
-    transactionHash: "0x1234...abcd"
-  },
-  {
-    id: "2",
-    studentName: "Bob Smith",
-    studentWallet: "0x5678...efgh",
-    credentialTitle: "Master of Data Science",
-    dateIssued: "2024-06-20",
-    status: "issued",
-    transactionHash: "0x5678...efgh"
-  },
-  {
-    id: "3",
-    studentName: "Carol Davis",
-    studentWallet: "0x9abc...ijkl",
-    credentialTitle: "AI/ML Specialization",
-    dateIssued: "2024-08-10",
-    status: "pending"
-  }
-];
 
 function extractErrorMsg(err: any): string {
   if (err?.code === 4001 || err?.code === "ACTION_REJECTED" || err?.info?.error?.code === 4001) {
@@ -83,11 +52,69 @@ export default function InstitutionDashboard() {
     credentialType: "certificate"
   });
 
-  const [credentials, setCredentials] = useState<IssuedCredential[]>(MOCK_CREDENTIALS);
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [credentials, setCredentials] = useState<IssuedCredential[]>([]);
+  const [loading, setLoading] = useState(false);
   const [issuing, setIssuing] = useState(false);
   const [issueStatus, setIssueStatus] = useState("");
   const [issueError, setIssueError] = useState("");
   const [revokingId, setRevokingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const address = localStorage.getItem("walletAddress");
+    if (address) setWalletAddress(address);
+  }, []);
+
+  const fetchCredentials = useCallback(async (issuer: string) => {
+    setLoading(true);
+    try {
+      const provider = getReadOnlyProvider();
+      const contract = getContract(provider);
+
+      // Filter by issuer (second indexed param); null = any holder
+      const [issuedEvents, revokedEvents] = await Promise.all([
+        contract.queryFilter(contract.filters.CredentialIssued(null, issuer), DEPLOYMENT_BLOCK),
+        contract.queryFilter(contract.filters.CredentialRevoked(null, issuer), DEPLOYMENT_BLOCK),
+      ]);
+
+      const revokedHashes = new Set(revokedEvents.map((e) => (e as any).args.documentHash));
+
+      const list: IssuedCredential[] = issuedEvents.map((e) => {
+        const { holder, documentHash, timestamp } = (e as any).args;
+
+        const meta = localStorage.getItem(`credvault_meta_${documentHash}`);
+        const parsed = meta ? JSON.parse(meta) : null;
+
+        return {
+          id: e.transactionHash,
+          studentName: parsed?.holderAddress
+            ? `${parsed.holderAddress.slice(0, 6)}...${parsed.holderAddress.slice(-4)}`
+            : `${holder.slice(0, 6)}...${holder.slice(-4)}`,
+          studentWallet: `${holder.slice(0, 6)}...${holder.slice(-4)}`,
+          holderAddress: holder,
+          documentHash,
+          credentialTitle: parsed?.title ?? "Verified Credential",
+          credentialType: parsed?.type ?? "credential",
+          dateIssued: parsed?.issuedAt
+            ? parsed.issuedAt.split("T")[0]
+            : new Date(Number(timestamp) * 1000).toISOString().split("T")[0],
+          status: revokedHashes.has(documentHash) ? "revoked" : "issued",
+          transactionHash: e.transactionHash,
+        };
+      });
+
+      setCredentials(list);
+    } catch (err) {
+      console.error("Failed to fetch credentials:", err);
+      toast({ title: "Error", description: "Could not load credentials from chain.", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    if (walletAddress) fetchCredentials(walletAddress);
+  }, [walletAddress, fetchCredentials]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -158,22 +185,9 @@ export default function InstitutionDashboard() {
         issuer: signer.address,
       }));
 
-      const newCred: IssuedCredential = {
-        id: docHash,
-        studentName: `${holder.slice(0, 6)}...${holder.slice(-4)}`,
-        studentWallet: `${holder.slice(0, 6)}...${holder.slice(-4)}`,
-        holderAddress: holder,
-        documentHash: docHash,
-        credentialTitle: title,
-        credentialType: issuanceForm.credentialType,
-        dateIssued: new Date().toISOString().split("T")[0],
-        status: "issued",
-        transactionHash: receipt.hash,
-      };
-      setCredentials(prev => [newCred, ...prev]);
-
       toast({ title: "✅ Credential Issued", description: `Tx: ${receipt.hash.slice(0, 10)}...` });
       setIssuanceForm({ studentWallet: "", credentialTitle: "", description: "", credentialType: "certificate" });
+      if (walletAddress) fetchCredentials(walletAddress);
     } catch (err: any) {
       console.error("Issue credential error:", err);
       const msg = extractErrorMsg(err);
@@ -405,7 +419,15 @@ export default function InstitutionDashboard() {
               </div>
 
               <div className="space-y-4">
-                {filteredCredentials.map((credential) => (
+                {loading && (
+                  <div className="text-center py-8">
+                    <div className="w-10 h-10 bg-muted rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
+                      <Clock className="w-5 h-5 text-muted-foreground" />
+                    </div>
+                    <p className="text-muted-foreground text-sm">Loading credentials from chain…</p>
+                  </div>
+                )}
+                {!loading && filteredCredentials.map((credential) => (
                   <div
                     key={credential.id}
                     className="bg-muted/30 border border-border/50 rounded-lg p-4 hover:bg-muted/50 transition-colors"
@@ -457,11 +479,15 @@ export default function InstitutionDashboard() {
                 ))}
               </div>
 
-              {filteredCredentials.length === 0 && (
+              {!loading && filteredCredentials.length === 0 && (
                 <div className="text-center py-8">
                   <Award className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
                   <h3 className="font-semibold mb-2">No credentials found</h3>
-                  <p className="text-muted-foreground">Start by issuing your first credential.</p>
+                  <p className="text-muted-foreground">
+                    {searchTerm || filter !== "all"
+                      ? "Try adjusting your search or filters."
+                      : "No credentials have been issued by this wallet yet."}
+                  </p>
                 </div>
               )}
             </Card>
