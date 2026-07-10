@@ -3,12 +3,12 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { 
-  Search, 
-  QrCode, 
-  CheckCircle, 
-  XCircle, 
-  ExternalLink, 
+import {
+  Search,
+  QrCode,
+  CheckCircle,
+  XCircle,
+  ExternalLink,
   Shield,
   AlertTriangle,
   Calendar,
@@ -16,12 +16,14 @@ import {
   User
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { ethers } from "ethers";
+import { getContract, getReadOnlyProvider } from "@/lib/contract";
 
 interface VerificationResult {
   isValid: boolean;
   credentialTitle?: string;
-  studentName?: string;
-  issuerName?: string;
+  studentName?: string;   // populated with holder address
+  issuerName?: string;    // populated with issuer address
   dateIssued?: string;
   transactionHash?: string;
   error?: string;
@@ -29,69 +31,101 @@ interface VerificationResult {
 
 export default function VerifierPage() {
   const { toast } = useToast();
-  const [credentialId, setCredentialId] = useState("");
+  const [holderAddress, setHolderAddress] = useState("");
+  const [documentHash, setDocumentHash] = useState("");
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
 
-  // Mock verification function
+  const canVerify = holderAddress.trim() !== "" && documentHash.trim() !== "" && !isVerifying;
+
   const handleVerify = async () => {
-    if (!credentialId.trim()) {
+    const holder = holderAddress.trim();
+    const hash = documentHash.trim();
+
+    if (!holder || !hash) {
       toast({
-        title: "Missing Credential ID",
-        description: "Please enter a credential ID or hash to verify.",
-        variant: "destructive"
+        title: "Missing Fields",
+        description: "Please enter both a holder address and a document hash.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!ethers.isAddress(holder)) {
+      toast({
+        title: "Invalid Address",
+        description: "The holder address is not a valid Ethereum address.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Accept "0x" prefixed or bare 64-char hex for the document hash
+    const normalizedHash = hash.startsWith("0x") ? hash : `0x${hash}`;
+    if (!/^0x[0-9a-fA-F]{64}$/.test(normalizedHash)) {
+      toast({
+        title: "Invalid Hash",
+        description: "The document hash must be a 32-byte hex string (64 hex chars, with or without 0x prefix).",
+        variant: "destructive",
       });
       return;
     }
 
     setIsVerifying(true);
-    
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    setVerificationResult(null);
 
-    // Mock verification logic
-    const mockResults: { [key: string]: VerificationResult } = {
-      "valid123": {
-        isValid: true,
-        credentialTitle: "Bachelor of Computer Science",
-        studentName: "Alice Johnson",
-        issuerName: "Stanford University",
-        dateIssued: "2024-05-15",
-        transactionHash: "0x1234567890abcdef1234567890abcdef12345678"
-      },
-      "invalid456": {
-        isValid: false,
-        error: "Credential has been revoked by the issuing institution"
-      },
-      "notfound789": {
-        isValid: false,
-        error: "Credential not found on the blockchain"
+    try {
+      const provider = getReadOnlyProvider();
+      const contract = getContract(provider);
+
+      const [isValid, issuer, timestamp] = await contract.verifyCredential(holder, normalizedHash);
+
+      if (!isValid && issuer === ethers.ZeroAddress) {
+        setVerificationResult({
+          isValid: false,
+          error: "Credential not found on-chain. No record exists for this holder + hash combination.",
+        });
+        toast({
+          title: "❌ Verification Failed",
+          description: "Credential not found on the blockchain.",
+          variant: "destructive",
+        });
+      } else {
+        const dateIssued = new Date(Number(timestamp) * 1000).toISOString().split("T")[0];
+        setVerificationResult({
+          isValid: isValid as boolean,
+          credentialTitle: "On-chain Verified Credential",
+          studentName: holder,
+          issuerName: issuer as string,
+          dateIssued,
+          error: isValid ? undefined : "This credential has been revoked by the issuing institution.",
+        });
+        if (isValid) {
+          toast({
+            title: "✅ Credential Verified",
+            description: "This credential is valid and active on the blockchain.",
+          });
+        } else {
+          toast({
+            title: "❌ Credential Revoked",
+            description: "This credential has been revoked.",
+            variant: "destructive",
+          });
+        }
       }
-    };
-
-    const result = mockResults[credentialId] || {
-      isValid: true,
-      credentialTitle: "AWS Cloud Architect Certification",
-      studentName: "John Doe",
-      issuerName: "Amazon Web Services",
-      dateIssued: "2024-03-10",
-      transactionHash: "0xabcdef1234567890abcdef1234567890abcdef12"
-    };
-
-    setVerificationResult(result);
-    setIsVerifying(false);
-
-    if (result.isValid) {
-      toast({
-        title: "✅ Credential Verified",
-        description: "This credential is valid and verified on the blockchain.",
+    } catch (err) {
+      console.error("Verification error:", err);
+      setVerificationResult({
+        isValid: false,
+        error: "Failed to reach the blockchain. Check your network connection and try again.",
       });
-    } else {
       toast({
-        title: "❌ Verification Failed",
-        description: result.error || "This credential could not be verified.",
-        variant: "destructive"
+        title: "Network Error",
+        description: "Could not connect to Sepolia. Please try again.",
+        variant: "destructive",
       });
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -104,7 +138,8 @@ export default function VerifierPage() {
 
   const resetVerification = () => {
     setVerificationResult(null);
-    setCredentialId("");
+    setHolderAddress("");
+    setDocumentHash("");
   };
 
   return (
@@ -117,8 +152,8 @@ export default function VerifierPage() {
           </div>
           <h1 className="text-4xl font-bold mb-4">Credential Verifier</h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Instantly verify the authenticity of any blockchain-secured credential. 
-            Simply enter the credential ID or scan a QR code.
+            Instantly verify the authenticity of any blockchain-secured credential.
+            Enter the holder's wallet address and the document hash.
           </p>
         </div>
 
@@ -126,26 +161,40 @@ export default function VerifierPage() {
         <Card className="credential-card p-8 mb-8">
           <div className="space-y-6">
             <div>
-              <Label htmlFor="credentialId" className="text-lg font-semibold">
-                Credential ID or Transaction Hash
+              <Label htmlFor="holderAddress" className="text-lg font-semibold">
+                Holder Wallet Address
+              </Label>
+              <div className="mt-2">
+                <Input
+                  id="holderAddress"
+                  placeholder="0x..."
+                  value={holderAddress}
+                  onChange={(e) => setHolderAddress(e.target.value)}
+                  className="flex-1 font-mono h-12"
+                  disabled={isVerifying}
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="documentHash" className="text-lg font-semibold">
+                Document Hash (bytes32)
               </Label>
               <div className="mt-2 flex gap-3">
                 <Input
-                  id="credentialId"
-                  placeholder="Enter credential ID or paste transaction hash..."
-                  value={credentialId}
-                  onChange={(e) => setCredentialId(e.target.value)}
+                  id="documentHash"
+                  placeholder="0x1234...abcd  (64 hex chars)"
+                  value={documentHash}
+                  onChange={(e) => setDocumentHash(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !isVerifying && credentialId.trim()) {
-                      handleVerify();
-                    }
+                    if (e.key === 'Enter' && canVerify) handleVerify();
                   }}
                   className="flex-1 font-mono h-12"
                   disabled={isVerifying}
                 />
-                <Button 
-                  onClick={handleScanQR} 
-                  variant="outline" 
+                <Button
+                  onClick={handleScanQR}
+                  variant="outline"
                   size="lg"
                   className="h-12 px-4"
                   disabled={isVerifying}
@@ -156,17 +205,17 @@ export default function VerifierPage() {
             </div>
 
             <div className="flex gap-3">
-              <Button 
-                onClick={handleVerify} 
-                variant="hero" 
-                size="lg" 
+              <Button
+                onClick={handleVerify}
+                variant="hero"
+                size="lg"
                 className="flex-1 h-12"
-                disabled={isVerifying || !credentialId.trim()}
+                disabled={!canVerify}
               >
                 {isVerifying ? (
                   <>
                     <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
-                    Verifying...
+                    Verifying on Sepolia...
                   </>
                 ) : (
                   <>
@@ -175,43 +224,12 @@ export default function VerifierPage() {
                   </>
                 )}
               </Button>
-              
+
               {verificationResult && (
                 <Button onClick={resetVerification} variant="outline" size="lg" className="h-12">
                   New Search
                 </Button>
               )}
-            </div>
-
-            {/* Quick Demo Links */}
-            <div className="text-center">
-              <p className="text-sm text-muted-foreground mb-3">Try these demo credentials:</p>
-              <div className="flex flex-wrap gap-2 justify-center">
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => setCredentialId("valid123")}
-                  className="text-xs"
-                >
-                  Valid Credential
-                </Button>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => setCredentialId("invalid456")}
-                  className="text-xs"
-                >
-                  Revoked Credential
-                </Button>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => setCredentialId("notfound789")}
-                  className="text-xs"
-                >
-                  Not Found
-                </Button>
-              </div>
             </div>
           </div>
         </Card>
@@ -231,18 +249,17 @@ export default function VerifierPage() {
                   <XCircle className="w-10 h-10 text-destructive" />
                 </div>
               )}
-              
+
               <h2 className={`text-3xl font-bold mb-2 ${
                 verificationResult.isValid ? 'text-success' : 'text-destructive'
               }`}>
                 {verificationResult.isValid ? '✅ Credential Verified' : '❌ Verification Failed'}
               </h2>
-              
+
               <p className="text-muted-foreground">
-                {verificationResult.isValid 
-                  ? 'This credential is authentic and verified on the blockchain.'
-                  : verificationResult.error || 'This credential could not be verified.'
-                }
+                {verificationResult.isValid
+                  ? 'This credential is authentic and verified on the Sepolia blockchain.'
+                  : verificationResult.error || 'This credential could not be verified.'}
               </p>
             </div>
 
@@ -264,8 +281,8 @@ export default function VerifierPage() {
                       <User className="w-5 h-5 text-accent" />
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">Student Name</p>
-                      <p className="font-semibold">{verificationResult.studentName}</p>
+                      <p className="text-sm text-muted-foreground">Holder Address</p>
+                      <p className="font-semibold font-mono text-sm break-all">{verificationResult.studentName}</p>
                     </div>
                   </div>
                 </div>
@@ -276,8 +293,8 @@ export default function VerifierPage() {
                       <Building className="w-5 h-5 text-success" />
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">Issued By</p>
-                      <p className="font-semibold">{verificationResult.issuerName}</p>
+                      <p className="text-sm text-muted-foreground">Issuer Address</p>
+                      <p className="font-semibold font-mono text-sm break-all">{verificationResult.issuerName}</p>
                     </div>
                   </div>
 
@@ -288,7 +305,8 @@ export default function VerifierPage() {
                     <div>
                       <p className="text-sm text-muted-foreground">Date Issued</p>
                       <p className="font-semibold">
-                        {verificationResult.dateIssued && new Date(verificationResult.dateIssued).toLocaleDateString()}
+                        {verificationResult.dateIssued &&
+                          new Date(verificationResult.dateIssued).toLocaleDateString()}
                       </p>
                     </div>
                   </div>
@@ -303,7 +321,7 @@ export default function VerifierPage() {
                       </div>
                       <Button variant="outline" size="sm">
                         <ExternalLink className="w-4 h-4 mr-2" />
-                        View on Polygonscan
+                        View on Sepolia Explorer
                       </Button>
                     </div>
                   </div>
@@ -334,14 +352,14 @@ export default function VerifierPage() {
                 <QrCode className="w-6 h-6 text-primary" />
               </div>
               <p className="font-medium">Scan or Enter</p>
-              <p className="text-sm text-muted-foreground">Use QR code or enter credential ID</p>
+              <p className="text-sm text-muted-foreground">Use QR code or enter holder address and document hash</p>
             </div>
             <div className="space-y-2">
               <div className="w-12 h-12 bg-accent/20 rounded-full flex items-center justify-center mx-auto">
                 <Shield className="w-6 h-6 text-accent" />
               </div>
               <p className="font-medium">Blockchain Check</p>
-              <p className="text-sm text-muted-foreground">Verify against Polygon network</p>
+              <p className="text-sm text-muted-foreground">Verify against Sepolia network</p>
             </div>
             <div className="space-y-2">
               <div className="w-12 h-12 bg-success/20 rounded-full flex items-center justify-center mx-auto">
