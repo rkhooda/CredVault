@@ -1,10 +1,9 @@
 import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ethers } from 'ethers';
 import './Login.css';
 import logo from '@/assets/logo.png';
 import { Link2 } from 'lucide-react';
-import { getContract } from '@/lib/contract';
+import { getContract, getReadOnlyProvider } from '@/lib/contract';
 
 const InstitutionLogin = () => {
   const navigate = useNavigate();
@@ -23,25 +22,39 @@ const InstitutionLogin = () => {
         return;
       }
 
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-      const address = accounts[0];
-      setWalletAddress(address);
+      // Step 1: connect wallet — scoped catch so its errors don't bleed into the role check
+      let address;
+      try {
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        address = accounts[0];
+        setWalletAddress(address);
+      } catch (err) {
+        console.error("MetaMask connect error:", err);
+        setError(
+          err?.code === 4001
+            ? "Connection rejected. Please approve the MetaMask request."
+            : "Failed to connect MetaMask. Please try again."
+        );
+        return;
+      }
 
-      // Gate: only wallets with ISSUER_ROLE may proceed
-      const contract = getContract(provider);
-      const authorized = await contract.isIssuer(address);
-
-      if (!authorized) {
-        setError("This wallet is not authorized as an issuer. Contact the platform admin to be granted access.");
+      // Step 2: verify ISSUER_ROLE via read-only Sepolia provider — independent of
+      // whichever network MetaMask is currently on
+      try {
+        const contract = getContract(getReadOnlyProvider());
+        const authorized = await contract.isIssuer(address);
+        if (!authorized) {
+          setError("This wallet is not authorized as an issuer. Contact the platform admin to be granted access.");
+          return;
+        }
+      } catch (err) {
+        console.error("isIssuer check error:", err);
+        setError("Could not verify issuer role on Sepolia. Check your network connection and try again.");
         return;
       }
 
       localStorage.setItem("walletAddress", address);
       navigate('/institution-dashboard');
-    } catch (err) {
-      console.error("MetaMask connection error:", err);
-      setError("Failed to connect MetaMask. Please try again.");
     } finally {
       setIsConnecting(false);
     }
