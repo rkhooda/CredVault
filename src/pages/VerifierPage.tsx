@@ -1,8 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import jsQR from "jsqr";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import {
   Search,
   QrCode,
@@ -36,12 +44,19 @@ export default function VerifierPage() {
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
 
+  // QR scanner dialog state
+  const [scanOpen, setScanOpen] = useState(false);
+  const [scanError, setScanError] = useState("");
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rafRef = useRef<number>(0);
+  const streamRef = useRef<MediaStream | null>(null);
+
   const canVerify = holderAddress.trim() !== "" && documentHash.trim() !== "" && !isVerifying;
 
-  const handleVerify = async () => {
-    const holder = holderAddress.trim();
-    const hash = documentHash.trim();
-
+  // Core verify logic — called both from the button and directly after a QR scan
+  // so the QR path can pass parsed values without waiting for state to settle.
+  const runVerify = async (holder: string, hash: string) => {
     if (!holder || !hash) {
       toast({
         title: "Missing Fields",
@@ -129,12 +144,94 @@ export default function VerifierPage() {
     }
   };
 
-  const handleScanQR = () => {
-    toast({
-      title: "QR Scanner",
-      description: "QR code scanning functionality would be implemented here.",
-    });
-  };
+  const handleVerify = () => runVerify(holderAddress.trim(), documentHash.trim());
+
+  // Camera scan loop: start on dialog open, stop on close or successful decode.
+  // getUserMedia requires HTTPS or localhost — works in Vite dev server and on
+  // any TLS-terminated deployment. Will fail silently on plain HTTP origins.
+  useEffect(() => {
+    if (!scanOpen) {
+      cancelAnimationFrame(rafRef.current);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      setScanError("");
+      return;
+    }
+
+    let alive = true;
+
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+        });
+        if (!alive) { stream.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = stream;
+        const video = videoRef.current;
+        if (video) {
+          video.srcObject = stream;
+          await video.play();
+          tick();
+        }
+      } catch (err: any) {
+        if (!alive) return;
+        setScanError(
+          err.name === "NotAllowedError"
+            ? "Camera permission denied. Allow camera access in your browser settings and try again."
+            : "Could not start camera. Please check your device and try again.",
+        );
+      }
+    }
+
+    function tick() {
+      if (!alive) return;
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      // Wait until the video has actual frame data
+      if (!video || !canvas || video.readyState < video.HAVE_ENOUGH_DATA) {
+        rafRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(video, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height);
+      if (code) {
+        // QR found — stop scanning and process the payload
+        setScanOpen(false); // triggers cleanup via this effect's return
+        try {
+          const parsed = JSON.parse(code.data) as { holder?: unknown; documentHash?: unknown };
+          if (typeof parsed.holder !== "string" || typeof parsed.documentHash !== "string") {
+            throw new Error("missing fields");
+          }
+          setHolderAddress(parsed.holder);
+          setDocumentHash(parsed.documentHash);
+          // Call runVerify directly with the fresh values — don't wait for state to settle
+          runVerify(parsed.holder, parsed.documentHash);
+        } catch {
+          toast({
+            title: "Unrecognized QR code",
+            description: "This QR code is not a CredVault credential.",
+            variant: "destructive",
+          });
+        }
+        return; // stop the tick loop
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    }
+
+    startCamera();
+
+    return () => {
+      alive = false;
+      cancelAnimationFrame(rafRef.current);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanOpen]);
 
   const resetVerification = () => {
     setVerificationResult(null);
@@ -193,7 +290,7 @@ export default function VerifierPage() {
                   disabled={isVerifying}
                 />
                 <Button
-                  onClick={handleScanQR}
+                  onClick={() => setScanOpen(true)}
                   variant="outline"
                   size="lg"
                   className="h-12 px-4"
@@ -371,6 +468,32 @@ export default function VerifierPage() {
           </div>
         </div>
       </div>
+
+      {/* QR Scanner Dialog */}
+      <Dialog open={scanOpen} onOpenChange={setScanOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Scan QR Code</DialogTitle>
+            <DialogDescription>
+              Point your camera at a CredVault credential QR code to auto-fill the verification form.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-center gap-3">
+            {scanError ? (
+              <div className="w-full p-4 bg-destructive/10 border border-destructive/20 rounded-lg text-center">
+                <AlertTriangle className="w-5 h-5 text-destructive mx-auto mb-2" />
+                <p className="text-sm text-destructive">{scanError}</p>
+              </div>
+            ) : (
+              <div className="relative w-full aspect-square bg-muted rounded-lg overflow-hidden">
+                <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
+              </div>
+            )}
+            {/* Canvas is only used for frame capture — never shown */}
+            <canvas ref={canvasRef} className="hidden" />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
