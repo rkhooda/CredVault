@@ -187,7 +187,7 @@ export default function Landing() {
             </Button>
             <Button asChild variant="outline" size="hero" className="w-full sm:w-auto">
               <a
-                href="https://sepolia.etherscan.io/address/0xDF9D54e61a3174F8b565147832FF20877fCfb323"
+                href="https://sepolia.etherscan.io/address/0x9b18968bF69846de101041fcb4030C02912814Ba"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2"
