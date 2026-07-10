@@ -185,12 +185,12 @@ export const CREDENTIAL_VAULT_ABI = [
 ] as const;
 
 // Block at which the contract was deployed — used as the floor for event-log scans.
-export const DEPLOYMENT_BLOCK = 11244921;
+export const DEPLOYMENT_BLOCK = 11245046;
 
 // Fall back to hardcoded constants so the app works without a .env.local on other machines
 export const CONTRACT_ADDRESS: string =
   (import.meta.env.VITE_CONTRACT_ADDRESS as string | undefined) ??
-  "0x9b18968bF69846de101041fcb4030C02912814Ba";
+  "0xb93E8364b030877C14c47E262C2e9822A2a364f9";
 
 export const CHAIN_ID: number =
   Number((import.meta.env.VITE_CHAIN_ID as string | undefined) ?? 11155111);
