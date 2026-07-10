@@ -14,7 +14,7 @@
 
 ## 🌟 Overview
 
-**CredVault** is a next-generation blockchain-powered platform designed for the secure issuance, storage, and verification of academic and professional credentials. By leveraging the **Polygon** network, CredVault ensures that every credential is immutable, transparent, and instantly verifiable from anywhere in the world.
+**CredVault** is a next-generation blockchain-powered platform designed for the secure issuance, storage, and verification of academic and professional credentials. By leveraging the **Ethereum** blockchain (currently deployed on **Sepolia** testnet), CredVault ensures that every credential is immutable, transparent, and instantly verifiable from anywhere in the world.
 
 > "Own your education. Verify globally."
 
@@ -22,7 +22,7 @@
 
 ## ✨ Key Features
 
--   🔒 **Blockchain-Powered Security**: Immutable storage on the Polygon network ensures credentials can never be forged or altered.
+-   🔒 **Blockchain-Powered Security**: Immutable storage on the Ethereum blockchain ensures credentials can never be forged or altered.
 -   🌍 **Instant Global Verification**: Verify credentials in seconds using document hashes or QR codes.
 -   🏛️ **Institution Dashboard**: A dedicated portal for authorized educational institutions to issue and manage digital credentials.
 -   🎓 **Student Personal Vault**: A secure space for students to access, manage, and share their verified accomplishments.
@@ -44,7 +44,7 @@
 ### **Backend & Blockchain**
 - **Smart Contracts**: [Solidity](https://docs.soliditylang.org/)
 - **Development Framework**: [Foundry](https://book.getfoundry.sh/) (Forge, Anvil, Cast)
-- **Network**: [Polygon](https://polygon.technology/) (Compatible with any EVM chain)
+- **Network**: [Sepolia Testnet](https://sepolia.etherscan.io/) (EVM-compatible — deployable to any EVM chain)
 
 ---
 
@@ -112,7 +112,7 @@ npm run deploy
 ```
 
 ### **Smart Contracts**
-Contracts can be deployed to the Polygon network (or any EVM-compatible chain) using the deployment scripts in `Backend-Contracts/script/`.
+Contracts can be deployed to any EVM-compatible chain using the deployment scripts in `Backend-Contracts/script/`.
 
 ---
 

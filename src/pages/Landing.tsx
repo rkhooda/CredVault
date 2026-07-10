@@ -75,7 +75,7 @@ export default function Landing() {
     {
       icon: Lock,
       title: "Blockchain Security",
-      description: "Immutable credential storage on Polygon network with cryptographic verification."
+      description: "Immutable credential storage on the Ethereum blockchain with cryptographic verification."
     },
     {
       icon: Globe,

@@ -23,7 +23,7 @@ import { getContract, computeDocumentHash, ensureSepolia } from "@/lib/contract"
 interface IssuedCredential {
   id: string;
   studentName: string;
-  studentWallet: string;     // display value (may be truncated in mock data)
+  studentWallet: string;     // display value (may be truncated)
   holderAddress?: string;    // full address for contract calls
   documentHash?: string;     // bytes32 — required for revocation
   credentialTitle: string;
@@ -33,7 +33,8 @@ interface IssuedCredential {
   transactionHash?: string;
 }
 
-// Placeholder data — Phase 4 will replace this with on-chain event queries
+// Seed entries shown before any on-chain issuances have been made in this session.
+// New issuances are prepended in local state; the list is not yet synced from chain.
 const MOCK_CREDENTIALS: IssuedCredential[] = [
   {
     id: "1",
