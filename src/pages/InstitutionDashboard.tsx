@@ -1,32 +1,74 @@
 import { useState } from "react";
+import { ethers } from "ethers";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Send, 
+import {
+  Send,
   Search,
-  Filter, 
-  ExternalLink, 
-  CheckCircle, 
-  Clock, 
+  ExternalLink,
+  CheckCircle,
+  Clock,
   Users,
   Award,
   Building,
   Upload
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { getContract, computeDocumentHash, ensureSepolia } from "@/lib/contract";
 
 interface IssuedCredential {
   id: string;
   studentName: string;
-  studentWallet: string;
+  studentWallet: string;     // display value (may be truncated in mock data)
+  holderAddress?: string;    // full address for contract calls
+  documentHash?: string;     // bytes32 — required for revocation
   credentialTitle: string;
+  credentialType?: string;
   dateIssued: string;
   status: "issued" | "pending" | "revoked";
   transactionHash?: string;
+}
+
+// Placeholder data — Phase 4 will replace this with on-chain event queries
+const MOCK_CREDENTIALS: IssuedCredential[] = [
+  {
+    id: "1",
+    studentName: "Alice Johnson",
+    studentWallet: "0x1234...abcd",
+    credentialTitle: "Bachelor of Computer Science",
+    dateIssued: "2024-05-15",
+    status: "issued",
+    transactionHash: "0x1234...abcd"
+  },
+  {
+    id: "2",
+    studentName: "Bob Smith",
+    studentWallet: "0x5678...efgh",
+    credentialTitle: "Master of Data Science",
+    dateIssued: "2024-06-20",
+    status: "issued",
+    transactionHash: "0x5678...efgh"
+  },
+  {
+    id: "3",
+    studentName: "Carol Davis",
+    studentWallet: "0x9abc...ijkl",
+    credentialTitle: "AI/ML Specialization",
+    dateIssued: "2024-08-10",
+    status: "pending"
+  }
+];
+
+function extractErrorMsg(err: any): string {
+  if (err?.code === 4001 || err?.code === "ACTION_REJECTED" || err?.info?.error?.code === 4001) {
+    return "Transaction rejected in wallet.";
+  }
+  const msg = err?.reason ?? err?.shortMessage ?? err?.message ?? "Transaction failed.";
+  return msg.length > 120 ? msg.slice(0, 120) + "…" : msg;
 }
 
 export default function InstitutionDashboard() {
@@ -40,35 +82,11 @@ export default function InstitutionDashboard() {
     credentialType: "certificate"
   });
 
-  // Mock data
-  const issuedCredentials: IssuedCredential[] = [
-    {
-      id: "1",
-      studentName: "Alice Johnson",
-      studentWallet: "0x1234...abcd",
-      credentialTitle: "Bachelor of Computer Science",
-      dateIssued: "2024-05-15",
-      status: "issued",
-      transactionHash: "0x1234...abcd"
-    },
-    {
-      id: "2",
-      studentName: "Bob Smith", 
-      studentWallet: "0x5678...efgh",
-      credentialTitle: "Master of Data Science",
-      dateIssued: "2024-06-20",
-      status: "issued",
-      transactionHash: "0x5678...efgh"
-    },
-    {
-      id: "3",
-      studentName: "Carol Davis",
-      studentWallet: "0x9abc...ijkl",
-      credentialTitle: "AI/ML Specialization",
-      dateIssued: "2024-08-10",
-      status: "pending"
-    }
-  ];
+  const [credentials, setCredentials] = useState<IssuedCredential[]>(MOCK_CREDENTIALS);
+  const [issuing, setIssuing] = useState(false);
+  const [issueStatus, setIssueStatus] = useState("");
+  const [issueError, setIssueError] = useState("");
+  const [revokingId, setRevokingId] = useState<string | null>(null);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -83,35 +101,123 @@ export default function InstitutionDashboard() {
     }
   };
 
-  const filteredCredentials = issuedCredentials.filter(cred => {
+  const filteredCredentials = credentials.filter(cred => {
     const matchesSearch = cred.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          cred.credentialTitle.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesFilter = filter === "all" || cred.status === filter;
     return matchesSearch && matchesFilter;
   });
 
-  const handleIssueCredential = () => {
-    if (!issuanceForm.studentWallet || !issuanceForm.credentialTitle) {
+  const handleIssueCredential = async () => {
+    setIssueError("");
+    const holder = issuanceForm.studentWallet.trim();
+    const title = issuanceForm.credentialTitle.trim();
+
+    if (!holder || !title) {
+      toast({ title: "Missing Information", description: "Please fill in all required fields.", variant: "destructive" });
+      return;
+    }
+    if (!ethers.isAddress(holder)) {
+      setIssueError("Invalid wallet address.");
+      return;
+    }
+
+    setIssuing(true);
+    setIssueStatus("Switching to Sepolia...");
+    try {
+      await ensureSepolia();
+
+      const provider = new ethers.BrowserProvider((window as any).ethereum);
+      const signer = await provider.getSigner();
+      const contract = getContract(signer);
+
+      // Re-verify issuer role in case wallet changed since login
+      const authorized = await contract.isIssuer(signer.address);
+      if (!authorized) {
+        setIssueError("Connected wallet is not an authorized issuer.");
+        return;
+      }
+
+      const docHash = computeDocumentHash(holder, title, issuanceForm.credentialType);
+
+      setIssueStatus("Confirm in wallet...");
+      const tx = await contract.issueCredential(holder, docHash);
+
+      setIssueStatus("Transaction pending...");
+      const receipt = await tx.wait();
+
+      // Store human-readable metadata locally so dashboards can show readable info.
+      // NOTE: interim solution — browser-local only, lost on clearing localStorage.
+      localStorage.setItem(`credvault_meta_${docHash}`, JSON.stringify({
+        title,
+        type: issuanceForm.credentialType,
+        description: issuanceForm.description.trim(),
+        holderAddress: holder,
+        issuedAt: new Date().toISOString(),
+        issuer: signer.address,
+      }));
+
+      const newCred: IssuedCredential = {
+        id: docHash,
+        studentName: `${holder.slice(0, 6)}...${holder.slice(-4)}`,
+        studentWallet: `${holder.slice(0, 6)}...${holder.slice(-4)}`,
+        holderAddress: holder,
+        documentHash: docHash,
+        credentialTitle: title,
+        credentialType: issuanceForm.credentialType,
+        dateIssued: new Date().toISOString().split("T")[0],
+        status: "issued",
+        transactionHash: receipt.hash,
+      };
+      setCredentials(prev => [newCred, ...prev]);
+
+      toast({ title: "✅ Credential Issued", description: `Tx: ${receipt.hash.slice(0, 10)}...` });
+      setIssuanceForm({ studentWallet: "", credentialTitle: "", description: "", credentialType: "certificate" });
+    } catch (err: any) {
+      console.error("Issue credential error:", err);
+      const msg = extractErrorMsg(err);
+      setIssueError(msg);
+      toast({ title: "Issue Failed", description: msg, variant: "destructive" });
+    } finally {
+      setIssuing(false);
+      setIssueStatus("");
+    }
+  };
+
+  const handleRevoke = async (credential: IssuedCredential) => {
+    if (!credential.documentHash || !credential.holderAddress) {
       toast({
-        title: "Missing Information",
-        description: "Please fill in all required fields.",
+        title: "Cannot Revoke",
+        description: "This is placeholder data without an on-chain hash. Revoke only credentials issued through this dashboard.",
         variant: "destructive"
       });
       return;
     }
+    if (credential.status === "revoked") return;
 
-    toast({
-      title: "Credential Being Issued",
-      description: "The credential is being minted on the blockchain. This may take a few minutes.",
-    });
+    setRevokingId(credential.id);
+    try {
+      await ensureSepolia();
 
-    // Reset form
-    setIssuanceForm({
-      studentWallet: "",
-      credentialTitle: "",
-      description: "",
-      credentialType: "certificate"
-    });
+      const provider = new ethers.BrowserProvider((window as any).ethereum);
+      const signer = await provider.getSigner();
+      const contract = getContract(signer);
+
+      toast({ title: "Confirm in wallet", description: "Please approve the revocation in MetaMask." });
+      const tx = await contract.revokeCredential(credential.holderAddress, credential.documentHash);
+      await tx.wait();
+
+      setCredentials(prev =>
+        prev.map(c => c.id === credential.id ? { ...c, status: "revoked" as const } : c)
+      );
+      toast({ title: "✅ Credential Revoked", description: `${credential.credentialTitle} has been revoked on-chain.` });
+    } catch (err: any) {
+      console.error("Revoke credential error:", err);
+      const msg = extractErrorMsg(err);
+      toast({ title: "Revoke Failed", description: msg, variant: "destructive" });
+    } finally {
+      setRevokingId(null);
+    }
   };
 
   return (
@@ -129,7 +235,7 @@ export default function InstitutionDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Issued</p>
-                <p className="text-2xl font-bold">{issuedCredentials.length}</p>
+                <p className="text-2xl font-bold">{credentials.length}</p>
               </div>
               <div className="w-12 h-12 bg-primary/20 rounded-full flex items-center justify-center">
                 <Award className="w-6 h-6 text-primary" />
@@ -192,6 +298,7 @@ export default function InstitutionDashboard() {
                     value={issuanceForm.studentWallet}
                     onChange={(e) => setIssuanceForm(prev => ({ ...prev, studentWallet: e.target.value }))}
                     className="font-mono"
+                    disabled={issuing}
                   />
                 </div>
 
@@ -202,6 +309,7 @@ export default function InstitutionDashboard() {
                     placeholder="e.g., Bachelor of Computer Science"
                     value={issuanceForm.credentialTitle}
                     onChange={(e) => setIssuanceForm(prev => ({ ...prev, credentialTitle: e.target.value }))}
+                    disabled={issuing}
                   />
                 </div>
 
@@ -212,6 +320,7 @@ export default function InstitutionDashboard() {
                     value={issuanceForm.credentialType}
                     onChange={(e) => setIssuanceForm(prev => ({ ...prev, credentialType: e.target.value }))}
                     className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground"
+                    disabled={issuing}
                   >
                     <option value="certificate">Certificate</option>
                     <option value="degree">Degree</option>
@@ -228,20 +337,35 @@ export default function InstitutionDashboard() {
                     value={issuanceForm.description}
                     onChange={(e) => setIssuanceForm(prev => ({ ...prev, description: e.target.value }))}
                     rows={3}
+                    disabled={issuing}
                   />
                 </div>
 
                 <div className="space-y-3">
-                  <Button 
+                  <Button
                     onClick={handleIssueCredential}
-                    variant="hero" 
+                    variant="hero"
                     className="w-full"
+                    disabled={issuing}
                   >
-                    <Send className="w-4 h-4 mr-2" />
-                    Issue Credential
+                    {issuing ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
+                        {issueStatus || "Processing..."}
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4 mr-2" />
+                        Issue Credential
+                      </>
+                    )}
                   </Button>
-                  
-                  <Button variant="outline" className="w-full">
+
+                  {issueError && (
+                    <p className="text-sm text-destructive">{issueError}</p>
+                  )}
+
+                  <Button variant="outline" className="w-full" disabled={issuing}>
                     <Upload className="w-4 h-4 mr-2" />
                     Upload Credential File
                   </Button>
@@ -255,7 +379,7 @@ export default function InstitutionDashboard() {
             <Card className="credential-card p-6">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
                 <h2 className="text-2xl font-semibold mb-4 sm:mb-0">Issued Credentials</h2>
-                
+
                 <div className="flex gap-3 w-full sm:w-auto">
                   <div className="relative flex-1 sm:w-64">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -281,8 +405,8 @@ export default function InstitutionDashboard() {
 
               <div className="space-y-4">
                 {filteredCredentials.map((credential) => (
-                  <div 
-                    key={credential.id} 
+                  <div
+                    key={credential.id}
                     className="bg-muted/30 border border-border/50 rounded-lg p-4 hover:bg-muted/50 transition-colors"
                   >
                     <div className="flex justify-between items-start mb-3">
@@ -298,16 +422,33 @@ export default function InstitutionDashboard() {
                       <div className="text-sm text-muted-foreground">
                         Issued: {new Date(credential.dateIssued).toLocaleDateString()}
                       </div>
-                      
+
                       <div className="flex gap-2">
                         {credential.transactionHash && (
-                          <Button variant="outline" size="sm">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => window.open(`https://sepolia.etherscan.io/tx/${credential.transactionHash}`, "_blank")}
+                          >
                             <ExternalLink className="w-4 h-4 mr-1" />
                             View Tx
                           </Button>
                         )}
-                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
-                          Revoke
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => handleRevoke(credential)}
+                          disabled={revokingId === credential.id || credential.status === "revoked"}
+                        >
+                          {revokingId === credential.id ? (
+                            <>
+                              <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1" />
+                              Revoking...
+                            </>
+                          ) : (
+                            "Revoke"
+                          )}
                         </Button>
                       </div>
                     </div>
