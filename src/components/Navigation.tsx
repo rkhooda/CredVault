@@ -20,15 +20,12 @@ export function Navigation() {
     { path: "/verify", label: "Verify", icon: Search },
   ];
 
-  // Example address and MetaMask logo URL for dropdown display ONLY
   const walletAddress = localStorage.getItem("walletAddress") || "";
-  const fullWalletAddress = "0x20fE6789AbCdEf1234567890aBcDeF4b522";
   const metaMaskLogo = "https://upload.wikimedia.org/wikipedia/commons/3/36/MetaMask_Fox.svg";
-  const accountName = "Account 1"; // You can fetch via your wallet integration
+  const accountName = "Account 1";
 
   const copyAddress = () => {
-    navigator.clipboard.writeText(fullWalletAddress);
-    // Optionally add a toast notification
+    navigator.clipboard.writeText(walletAddress);
   };
 
   const handleLogout = () => {
