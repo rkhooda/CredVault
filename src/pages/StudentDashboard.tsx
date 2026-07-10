@@ -1,8 +1,16 @@
 import { useState, useEffect } from "react";
+import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import {
   Search,
   Download,
@@ -12,6 +20,7 @@ import {
   XCircle,
   QrCode,
   Wallet,
+  Copy,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getContract, getReadOnlyProvider, DEPLOYMENT_BLOCK } from "@/lib/contract";
@@ -35,6 +44,10 @@ export default function StudentDashboard() {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // QR dialog: null = closed, Credential = open for that credential
+  const [qrCredential, setQrCredential] = useState<Credential | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState("");
 
   useEffect(() => {
     const address = localStorage.getItem("walletAddress");
@@ -71,7 +84,7 @@ export default function StudentDashboard() {
           return {
             id: e.transactionHash,
             title: parsed?.title ?? "Verified Credential",
-            // issuer from meta is the human-readable address; event arg is the raw address
+            // meta.issuer is the human-readable address stored at issuance time
             issuer: parsed?.issuer ?? issuer,
             // meta stores ISO timestamp; fall back to on-chain timestamp (seconds → ms)
             dateIssued: parsed?.issuedAt ?? new Date(Number(timestamp) * 1000).toISOString(),
@@ -99,6 +112,22 @@ export default function StudentDashboard() {
     fetchCredentials();
   }, [walletAddress]);
 
+  // Generate QR data URL whenever the dialog opens for a credential.
+  // QR payload format: JSON { holder, documentHash }
+  // VerifierPage scanner (Phase 5) parses this to pre-fill its two-field form.
+  useEffect(() => {
+    if (!qrCredential) {
+      setQrDataUrl("");
+      return;
+    }
+    QRCode.toDataURL(
+      JSON.stringify({ holder: qrCredential.holderAddress, documentHash: qrCredential.documentHash }),
+      { width: 240, margin: 1 },
+    )
+      .then(setQrDataUrl)
+      .catch(console.error);
+  }, [qrCredential]);
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "verified":
@@ -122,15 +151,13 @@ export default function StudentDashboard() {
     return matchesSearch && matchesFilter;
   });
 
-  // QR payload format: JSON.stringify({ holder, documentHash })
-  // Phase 5 VerifierPage scanner will parse this to pre-fill its two-field form.
-  const handleQrCode = (credential: Credential) => {
+  const copyQrData = (credential: Credential) => {
     const payload = JSON.stringify({
       holder: credential.holderAddress,
       documentHash: credential.documentHash,
     });
     navigator.clipboard.writeText(payload).then(
-      () => toast({ title: "Copied", description: "Credential data copied — share this to let verifiers scan it." }),
+      () => toast({ title: "Copied", description: "Credential data copied to clipboard." }),
       () => toast({ title: "QR Data", description: payload }),
     );
   };
@@ -277,7 +304,7 @@ export default function StudentDashboard() {
                     variant="outline"
                     size="sm"
                     className="flex-1 min-w-0"
-                    onClick={() => handleQrCode(credential)}
+                    onClick={() => setQrCredential(credential)}
                   >
                     <QrCode className="w-4 h-4 mr-2" />
                     QR Code
@@ -321,6 +348,42 @@ export default function StudentDashboard() {
           </div>
         )}
       </div>
+
+      {/* QR Code Dialog */}
+      <Dialog open={!!qrCredential} onOpenChange={(open) => { if (!open) setQrCredential(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{qrCredential?.title ?? "Credential QR Code"}</DialogTitle>
+            <DialogDescription>
+              Share this QR code so verifiers can scan it in the Verifier Portal.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-center gap-4 py-2">
+            {qrDataUrl ? (
+              <img
+                src={qrDataUrl}
+                alt="Credential QR code"
+                width={240}
+                height={240}
+                className="rounded-lg"
+              />
+            ) : (
+              <div className="w-60 h-60 bg-muted rounded-lg flex items-center justify-center">
+                <Clock className="w-8 h-8 text-muted-foreground animate-pulse" />
+              </div>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => qrCredential && copyQrData(qrCredential)}
+            >
+              <Copy className="w-4 h-4 mr-2" />
+              Copy data
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
