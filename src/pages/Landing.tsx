@@ -183,11 +183,16 @@ export default function Landing() {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Button asChild variant="hero" size="hero" className="w-full sm:w-auto">
-              <Link to="/student">Get Started</Link>
+              <Link to="/student-portal">Get Started</Link>
             </Button>
             <Button asChild variant="outline" size="hero" className="w-full sm:w-auto">
-              <a href="#" className="flex items-center gap-2">
-                View on Polygonscan
+              <a
+                href="https://sepolia.etherscan.io/address/0xDF9D54e61a3174F8b565147832FF20877fCfb323"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2"
+              >
+                View on Sepolia Explorer
                 <ExternalLink className="w-4 h-4" />
               </a>
             </Button>
