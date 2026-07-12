@@ -210,18 +210,11 @@ export function getContract(providerOrSigner: ethers.ContractRunner) {
 
 /**
  * Returns a read-only provider pointing at Sepolia.
- * Uses two public endpoints concurrently (quorum=1) for resilience.
  * Used for view calls that don't require a connected wallet.
+ * FALLBACK_RPC_URL is available as a manual override via VITE_RPC_URL if the primary goes down.
  */
-export function getReadOnlyProvider(): ethers.AbstractProvider {
-  return new ethers.FallbackProvider(
-    [
-      new ethers.JsonRpcProvider(RPC_URL, CHAIN_ID, { staticNetwork: true }),
-      new ethers.JsonRpcProvider(FALLBACK_RPC_URL, CHAIN_ID, { staticNetwork: true }),
-    ],
-    CHAIN_ID,
-    { quorum: 1 },
-  );
+export function getReadOnlyProvider(): ethers.JsonRpcProvider {
+  return new ethers.JsonRpcProvider(RPC_URL, CHAIN_ID, { staticNetwork: true });
 }
 
 /**
