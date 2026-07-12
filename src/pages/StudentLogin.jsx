@@ -12,7 +12,7 @@ const StudentLogin = () => {
 
   useEffect(() => {
     // Load saved wallet address on component mount
-    const savedAddress = localStorage.getItem("walletAddress");
+    const savedAddress = localStorage.getItem("credvault_student_wallet");
     if (savedAddress) {
       setWalletAddress(savedAddress);
     }
@@ -25,18 +25,23 @@ const StudentLogin = () => {
         return;
       }
 
-      // Use ethers.js provider (optional, for further usage)
-      const provider = new ethers.BrowserProvider(window.ethereum);
+      // wallet_requestPermissions forces MetaMask to show the account picker every
+      // time, so users can choose a different account than the one already connected.
+      await window.ethereum.request({
+        method: 'wallet_requestPermissions',
+        params: [{ eth_accounts: {} }],
+      });
 
-      // Trigger MetaMask popup for account selection
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
       const address = accounts[0];
+      if (!address) return; // user closed the picker without selecting
 
       setWalletAddress(address);
-      localStorage.setItem("walletAddress", address);
+      localStorage.setItem("credvault_student_wallet", address);
 
       navigate("/student-dashboard");
     } catch (error) {
+      if (error?.code === 4001) return; // user rejected — silent, button text resets naturally
       console.error("MetaMask connection error:", error);
       alert("Failed to connect MetaMask. Please try again.");
     }

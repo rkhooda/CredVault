@@ -53,7 +53,7 @@ const InstitutionLogin = () => {
         return;
       }
 
-      localStorage.setItem("walletAddress", address);
+      localStorage.setItem("credvault_institution_wallet", address);
       navigate('/institution-dashboard');
     } finally {
       setIsConnecting(false);

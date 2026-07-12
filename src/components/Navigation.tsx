@@ -11,7 +11,9 @@ export function Navigation() {
   const [isWalletOpen, setIsWalletOpen] = useState(false);
 
   // Dashboard route detection
-  const isDashboard = location.pathname === "/student-dashboard" || location.pathname === "/institution-dashboard";
+  const isStudentDashboard = location.pathname === "/student-dashboard";
+  const isInstitutionDashboard = location.pathname === "/institution-dashboard";
+  const isDashboard = isStudentDashboard || isInstitutionDashboard;
 
   const navItems = [
     { path: "/", label: "Home", icon: Shield },
@@ -20,7 +22,10 @@ export function Navigation() {
     { path: "/verify", label: "Verify", icon: Search },
   ];
 
-  const walletAddress = localStorage.getItem("walletAddress") || "";
+  const walletKey = isInstitutionDashboard
+    ? "credvault_institution_wallet"
+    : "credvault_student_wallet";
+  const walletAddress = localStorage.getItem(walletKey) || "";
   const metaMaskLogo = "https://upload.wikimedia.org/wikipedia/commons/3/36/MetaMask_Fox.svg";
   const accountName = "Account 1";
 
@@ -29,10 +34,8 @@ export function Navigation() {
   };
 
   const handleLogout = () => {
-    // Clear all wallet info
-    localStorage.removeItem("walletAddress");
-    // Redirect to login page
-    navigate("/student-portal");
+    localStorage.removeItem(walletKey);
+    navigate(isInstitutionDashboard ? "/institution-portal" : "/student-portal");
   };
 
   return (

@@ -62,7 +62,7 @@ export default function InstitutionDashboard() {
   const [revokingId, setRevokingId] = useState<string | null>(null);
 
   useEffect(() => {
-    const address = localStorage.getItem("walletAddress");
+    const address = localStorage.getItem("credvault_institution_wallet");
     if (address) setWalletAddress(address);
   }, []);
 

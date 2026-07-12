@@ -51,7 +51,7 @@ export default function StudentDashboard() {
   const [qrDataUrl, setQrDataUrl] = useState("");
 
   useEffect(() => {
-    const address = localStorage.getItem("walletAddress");
+    const address = localStorage.getItem("credvault_student_wallet");
     if (address) setWalletAddress(address);
   }, []);
 
