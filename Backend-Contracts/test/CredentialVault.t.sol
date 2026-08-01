@@ -392,6 +392,47 @@ contract CredentialVaultTest is Test {
         vm.stopPrank();
     }
 
+    // --- Guard clauses ---
+
+    function test_RevertWhen_DeployingWithZeroAdmin() public {
+        vm.expectRevert(CredentialVault.ZeroAddress.selector);
+        new CredentialVault(address(0));
+    }
+
+    function test_RevertWhen_RegisteringZeroAddressIssuer() public {
+        vm.expectRevert(CredentialVault.ZeroAddress.selector);
+        vm.prank(ADMIN);
+        vault.registerIssuer(address(0), "Ghost University", "", "");
+    }
+
+    function test_RevertWhen_AdminRevokesUnknownCredential() public {
+        vm.expectRevert(CredentialVault.CredentialNotFound.selector);
+        vm.prank(ADMIN);
+        vault.adminRevoke(ALICE, keccak256("never-issued"));
+    }
+
+    function test_RevertWhen_AdminRevokesAlreadyRevokedCredential() public {
+        _issueAndAccept();
+        vm.prank(COLLEGE_A);
+        vault.revokeCredential(ALICE, DOC_HASH);
+
+        vm.expectRevert(CredentialVault.CredentialNotRevocable.selector);
+        vm.prank(ADMIN);
+        vault.adminRevoke(ALICE, DOC_HASH);
+    }
+
+    function test_RevertWhen_ReinstatingUnknownCredential() public {
+        vm.expectRevert(CredentialVault.CredentialNotFound.selector);
+        vm.prank(COLLEGE_A);
+        vault.reinstateCredential(ALICE, keccak256("never-issued"));
+    }
+
+    function test_RevertWhen_RejectingUnknownCredential() public {
+        vm.expectRevert(CredentialVault.CredentialNotFound.selector);
+        vm.prank(ALICE);
+        vault.rejectCredential(keccak256("never-issued"));
+    }
+
     // --- Issuer registry ---
 
     function test_RegisterIssuerGrantsRoleAndIdentity() public {

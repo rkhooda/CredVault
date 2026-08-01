@@ -6,4 +6,15 @@ remappings = [
     "forge-std/=lib/forge-std/src/",
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/"
 ]
+
+[fuzz]
+runs = 256
+
+# Default depth (500) puts the invariant suite at ~100s, which is too slow to run
+# on every push. 128 x 100 still exercises ~12.8k random call sequences.
+[invariant]
+runs = 128
+depth = 100
+fail_on_revert = false
+
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
