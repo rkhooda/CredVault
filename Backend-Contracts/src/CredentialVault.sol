@@ -118,6 +118,9 @@ contract CredentialVault is AccessControlEnumerable, Pausable {
     event CredentialReinstated(
         address indexed holder, address indexed issuer, bytes32 indexed documentHash, uint48 timestamp
     );
+    event CredentialAdminRevoked(
+        address indexed holder, address indexed admin, bytes32 indexed documentHash, uint48 timestamp
+    );
     event IssuerRegistered(address indexed issuer, string name, string accreditationId, string website);
     event IssuerDeregistered(address indexed issuer);
 
@@ -287,6 +290,25 @@ contract CredentialVault is AccessControlEnumerable, Pausable {
 
         credential.status = Status.Revoked;
         emit CredentialRevoked(holder, msg.sender, documentHash, uint48(block.timestamp));
+    }
+
+    /**
+     * @notice Administrative revocation, bypassing the issuer check.
+     * @dev Deliberate centralisation trade-off. An institution can lose its keys or
+     *      its accreditation, and deregistering it only stops *future* issuance —
+     *      fraudulent credentials it already signed would otherwise stand forever.
+     *      Emitted as a distinct event so this power is auditable on-chain.
+     */
+    function adminRevoke(address holder, bytes32 documentHash) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        Credential storage credential = credentials[holder][documentHash];
+
+        if (credential.issuer == address(0)) revert CredentialNotFound();
+        if (credential.status != Status.Pending && credential.status != Status.Active) {
+            revert CredentialNotRevocable();
+        }
+
+        credential.status = Status.Revoked;
+        emit CredentialAdminRevoked(holder, msg.sender, documentHash, uint48(block.timestamp));
     }
 
     /// @notice Undo a revocation. Restores the credential to `Active`.

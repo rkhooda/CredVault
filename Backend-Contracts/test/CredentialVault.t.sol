@@ -297,6 +297,26 @@ contract CredentialVaultTest is Test {
         vault.revokeCredential(ALICE, keccak256("never-issued"));
     }
 
+    function test_AdminCanRevokeAnyCredential() public {
+        _issueAndAccept();
+
+        vm.prank(ADMIN);
+        vault.adminRevoke(ALICE, DOC_HASH);
+
+        assertFalse(vault.verifyCredential(ALICE, DOC_HASH).isValid);
+    }
+
+    function test_RevertWhen_NonAdminUsesAdminRevoke() public {
+        _issueAndAccept();
+
+        bytes32 adminRole = vault.DEFAULT_ADMIN_ROLE();
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, COLLEGE_B, adminRole)
+        );
+        vm.prank(COLLEGE_B);
+        vault.adminRevoke(ALICE, DOC_HASH);
+    }
+
     function test_ReinstateRestoresValidity() public {
         _issueAndAccept();
         vm.startPrank(COLLEGE_A);
