@@ -17,4 +17,14 @@ runs = 128
 depth = 100
 fail_on_revert = false
 
+# The CI workflow sets FOUNDRY_PROFILE=ci. Search harder there than locally,
+# where the suite is run on every change and needs to stay fast.
+[profile.ci.fuzz]
+runs = 1024
+
+[profile.ci.invariant]
+runs = 256
+depth = 250
+fail_on_revert = false
+
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
