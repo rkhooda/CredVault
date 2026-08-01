@@ -21,30 +21,37 @@ import {
   AlertTriangle,
   Calendar,
   Building,
-  User
+  User,
+  FileCheck,
+  Lock,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ethers } from "ethers";
-import { getContract, getReadOnlyProvider } from "@/lib/contract";
+import { CONTRACT_ADDRESS } from "@/lib/contract";
+import {
+  verifyCredential,
+  decodeSharePayload,
+  CredentialStatus,
+  STATUS_LABELS,
+  type CredentialRecord,
+} from "@/lib/credentials";
+import { fileMatchesHash } from "@/lib/documentHash";
 
-interface VerificationResult {
-  isValid: boolean;
-  credentialTitle?: string;
-  studentName?: string;   // populated with holder address
-  issuerName?: string;    // populated with issuer address
-  dateIssued?: string;
-  transactionHash?: string;
-  error?: string;
-}
+type DocumentCheck = "idle" | "checking" | "match" | "mismatch";
 
 export default function VerifierPage() {
   const { toast } = useToast();
   const [holderAddress, setHolderAddress] = useState("");
   const [documentHash, setDocumentHash] = useState("");
-  const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
+  const [decryptionKey, setDecryptionKey] = useState<string | undefined>(undefined);
+  const [record, setRecord] = useState<CredentialRecord | null>(null);
+  const [notFound, setNotFound] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
 
-  // QR scanner dialog state
+  const [documentCheck, setDocumentCheck] = useState<DocumentCheck>("idle");
+  const documentInputRef = useRef<HTMLInputElement>(null);
+
   const [scanOpen, setScanOpen] = useState(false);
   const [scanError, setScanError] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -54,101 +61,86 @@ export default function VerifierPage() {
 
   const canVerify = holderAddress.trim() !== "" && documentHash.trim() !== "" && !isVerifying;
 
-  // Core verify logic — called both from the button and directly after a QR scan
-  // so the QR path can pass parsed values without waiting for state to settle.
-  const runVerify = async (holder: string, hash: string) => {
+  /**
+   * Called from the button and directly from the QR path, which passes fresh
+   * values rather than waiting for state to settle.
+   */
+  const runVerify = async (holder: string, hash: string, key?: string) => {
     if (!holder || !hash) {
       toast({
         title: "Missing Fields",
-        description: "Please enter both a holder address and a document hash.",
+        description: "Enter both a holder address and a document hash.",
         variant: "destructive",
       });
       return;
     }
-
     if (!ethers.isAddress(holder)) {
-      toast({
-        title: "Invalid Address",
-        description: "The holder address is not a valid Ethereum address.",
-        variant: "destructive",
-      });
+      toast({ title: "Invalid Address", description: "That is not a valid Ethereum address.", variant: "destructive" });
       return;
     }
 
-    // Accept "0x" prefixed or bare 64-char hex for the document hash
     const normalizedHash = hash.startsWith("0x") ? hash : `0x${hash}`;
     if (!/^0x[0-9a-fA-F]{64}$/.test(normalizedHash)) {
       toast({
         title: "Invalid Hash",
-        description: "The document hash must be a 32-byte hex string (64 hex chars, with or without 0x prefix).",
+        description: "The document hash must be 64 hex characters.",
         variant: "destructive",
       });
       return;
     }
 
     setIsVerifying(true);
-    setVerificationResult(null);
+    setRecord(null);
+    setNotFound(false);
+    setError(null);
+    setDocumentCheck("idle");
 
     try {
-      const provider = getReadOnlyProvider();
-      const contract = getContract(provider);
+      const result = await verifyCredential(holder, normalizedHash, key);
 
-      const [isValid, issuer, timestamp] = await contract.verifyCredential(holder, normalizedHash);
+      if (!result) {
+        setNotFound(true);
+        toast({ title: "Not found", description: "No record exists for this holder and hash.", variant: "destructive" });
+        return;
+      }
 
-      if (!isValid && issuer === ethers.ZeroAddress) {
-        setVerificationResult({
-          isValid: false,
-          error: "Credential not found on-chain. No record exists for this holder + hash combination.",
-        });
+      setRecord(result);
+      if (result.isValid) {
+        toast({ title: "Credential verified", description: "Valid and active on-chain." });
+      } else {
         toast({
-          title: "❌ Verification Failed",
-          description: "Credential not found on the blockchain.",
+          title: STATUS_LABELS[result.status],
+          description: result.isExpired ? "This credential has expired." : "This credential is not currently valid.",
           variant: "destructive",
         });
-      } else {
-        const dateIssued = new Date(Number(timestamp) * 1000).toISOString().split("T")[0];
-        setVerificationResult({
-          isValid: isValid as boolean,
-          credentialTitle: "On-chain Verified Credential",
-          studentName: holder,
-          issuerName: issuer as string,
-          dateIssued,
-          error: isValid ? undefined : "This credential has been revoked by the issuing institution.",
-        });
-        if (isValid) {
-          toast({
-            title: "✅ Credential Verified",
-            description: "This credential is valid and active on the blockchain.",
-          });
-        } else {
-          toast({
-            title: "❌ Credential Revoked",
-            description: "This credential has been revoked.",
-            variant: "destructive",
-          });
-        }
       }
     } catch (err) {
       console.error("Verification error:", err);
-      setVerificationResult({
-        isValid: false,
-        error: "Failed to reach the blockchain. Check your network connection and try again.",
-      });
-      toast({
-        title: "Network Error",
-        description: "Could not connect to Sepolia. Please try again.",
-        variant: "destructive",
-      });
+      setError("Could not reach Sepolia. Check your connection and try again.");
     } finally {
       setIsVerifying(false);
     }
   };
 
-  const handleVerify = () => runVerify(holderAddress.trim(), documentHash.trim());
+  const handleVerify = () => runVerify(holderAddress.trim(), documentHash.trim(), decryptionKey);
+
+  /** Recomputes keccak256 over the uploaded file and compares it to the on-chain hash. */
+  const handleDocumentCheck = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !record) return;
+
+    setDocumentCheck("checking");
+    try {
+      setDocumentCheck((await fileMatchesHash(file, record.documentHash)) ? "match" : "mismatch");
+    } catch (err) {
+      console.error("Document check failed:", err);
+      setDocumentCheck("mismatch");
+    }
+  };
 
   // Camera scan loop: start on dialog open, stop on close or successful decode.
-  // getUserMedia requires HTTPS or localhost — works in Vite dev server and on
-  // any TLS-terminated deployment. Will fail silently on plain HTTP origins.
+  // getUserMedia requires HTTPS or localhost.
   useEffect(() => {
     if (!scanOpen) {
       cancelAnimationFrame(rafRef.current);
@@ -162,10 +154,11 @@ export default function VerifierPage() {
 
     async function startCamera() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-        });
-        if (!alive) { stream.getTracks().forEach((t) => t.stop()); return; }
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        if (!alive) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
         streamRef.current = stream;
         const video = videoRef.current;
         if (video) {
@@ -173,12 +166,12 @@ export default function VerifierPage() {
           await video.play();
           tick();
         }
-      } catch (err: any) {
+      } catch (err) {
         if (!alive) return;
         setScanError(
-          err.name === "NotAllowedError"
-            ? "Camera permission denied. Allow camera access in your browser settings and try again."
-            : "Could not start camera. Please check your device and try again.",
+          (err as Error).name === "NotAllowedError"
+            ? "Camera permission denied. Allow camera access and try again."
+            : "Could not start camera. Check your device and try again.",
         );
       }
     }
@@ -187,7 +180,6 @@ export default function VerifierPage() {
       if (!alive) return;
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      // Wait until the video has actual frame data
       if (!video || !canvas || video.readyState < video.HAVE_ENOUGH_DATA) {
         rafRef.current = requestAnimationFrame(tick);
         return;
@@ -198,26 +190,23 @@ export default function VerifierPage() {
       ctx.drawImage(video, 0, 0);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const code = jsQR(imageData.data, imageData.width, imageData.height);
+
       if (code) {
-        // QR found — stop scanning and process the payload
         setScanOpen(false); // triggers cleanup via this effect's return
-        try {
-          const parsed = JSON.parse(code.data) as { holder?: unknown; documentHash?: unknown };
-          if (typeof parsed.holder !== "string" || typeof parsed.documentHash !== "string") {
-            throw new Error("missing fields");
-          }
-          setHolderAddress(parsed.holder);
-          setDocumentHash(parsed.documentHash);
-          // Call runVerify directly with the fresh values — don't wait for state to settle
-          runVerify(parsed.holder, parsed.documentHash);
-        } catch {
+        const payload = decodeSharePayload(code.data);
+        if (!payload) {
           toast({
             title: "Unrecognized QR code",
-            description: "This QR code is not a CredVault credential.",
+            description: "This is not a CredVault credential.",
             variant: "destructive",
           });
+          return;
         }
-        return; // stop the tick loop
+        setHolderAddress(payload.holder);
+        setDocumentHash(payload.documentHash);
+        setDecryptionKey(payload.k);
+        runVerify(payload.holder, payload.documentHash, payload.k);
+        return;
       }
       rafRef.current = requestAnimationFrame(tick);
     }
@@ -230,31 +219,36 @@ export default function VerifierPage() {
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scanOpen]);
 
   const resetVerification = () => {
-    setVerificationResult(null);
+    setRecord(null);
+    setNotFound(false);
+    setError(null);
     setHolderAddress("");
     setDocumentHash("");
+    setDecryptionKey(undefined);
+    setDocumentCheck("idle");
   };
+
+  const showResult = record !== null || notFound || error !== null;
+  const isValid = record?.isValid ?? false;
 
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
         <div className="text-center mb-12">
           <div className="w-20 h-20 bg-gradient-primary rounded-full flex items-center justify-center mx-auto mb-6">
             <Shield className="w-10 h-10 text-primary-foreground" />
           </div>
           <h1 className="text-4xl font-bold mb-4">Credential Verifier</h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Instantly verify the authenticity of any blockchain-secured credential.
-            Enter the holder's wallet address and the document hash.
+            Instantly verify any blockchain-secured credential. Scan the holder's QR code, or enter their wallet
+            address and the document hash.
           </p>
         </div>
 
-        {/* Verification Input */}
         <Card className="credential-card p-8 mb-8">
           <div className="space-y-6">
             <div>
@@ -284,7 +278,7 @@ export default function VerifierPage() {
                   value={documentHash}
                   onChange={(e) => setDocumentHash(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && canVerify) handleVerify();
+                    if (e.key === "Enter" && canVerify) handleVerify();
                   }}
                   className="flex-1 font-mono h-12"
                   disabled={isVerifying}
@@ -299,16 +293,14 @@ export default function VerifierPage() {
                   <QrCode className="w-5 h-5" />
                 </Button>
               </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                Scanning the holder's QR also carries their decryption key, which reveals the credential's details.
+                Without it you can still confirm the credential is valid.
+              </p>
             </div>
 
             <div className="flex gap-3">
-              <Button
-                onClick={handleVerify}
-                variant="hero"
-                size="lg"
-                className="flex-1 h-12"
-                disabled={!canVerify}
-              >
+              <Button onClick={handleVerify} variant="hero" size="lg" className="flex-1 h-12" disabled={!canVerify}>
                 {isVerifying ? (
                   <>
                     <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
@@ -322,7 +314,7 @@ export default function VerifierPage() {
                 )}
               </Button>
 
-              {verificationResult && (
+              {showResult && (
                 <Button onClick={resetVerification} variant="outline" size="lg" className="h-12">
                   New Search
                 </Button>
@@ -331,13 +323,10 @@ export default function VerifierPage() {
           </div>
         </Card>
 
-        {/* Verification Result */}
-        {verificationResult && (
-          <Card className={`credential-card p-8 ${
-            verificationResult.isValid ? 'border-success' : 'border-destructive'
-          }`}>
+        {showResult && (
+          <Card className={`credential-card p-8 ${isValid ? "border-success" : "border-destructive"}`}>
             <div className="text-center mb-6">
-              {verificationResult.isValid ? (
+              {isValid ? (
                 <div className="w-20 h-20 bg-success/20 rounded-full flex items-center justify-center mx-auto mb-4">
                   <CheckCircle className="w-10 h-10 text-success" />
                 </div>
@@ -347,92 +336,169 @@ export default function VerifierPage() {
                 </div>
               )}
 
-              <h2 className={`text-3xl font-bold mb-2 ${
-                verificationResult.isValid ? 'text-success' : 'text-destructive'
-              }`}>
-                {verificationResult.isValid ? '✅ Credential Verified' : '❌ Verification Failed'}
+              <h2 className={`text-3xl font-bold mb-2 ${isValid ? "text-success" : "text-destructive"}`}>
+                {isValid ? "Credential Verified" : "Not Valid"}
               </h2>
 
               <p className="text-muted-foreground">
-                {verificationResult.isValid
-                  ? 'This credential is authentic and verified on the Sepolia blockchain.'
-                  : verificationResult.error || 'This credential could not be verified.'}
+                {error
+                  ? error
+                  : notFound
+                    ? "No record exists on-chain for this holder and document hash."
+                    : isValid
+                      ? "This credential is authentic and active on the Sepolia blockchain."
+                      : record?.isExpired
+                        ? `This credential expired on ${record.expiresAt?.toLocaleDateString()}.`
+                        : `Status: ${STATUS_LABELS[record?.status ?? CredentialStatus.None]}.`}
               </p>
             </div>
 
-            {verificationResult.isValid && (
-              <div className="grid md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-primary/20 rounded-full flex items-center justify-center">
-                      <Shield className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Credential Title</p>
-                      <p className="font-semibold">{verificationResult.credentialTitle}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-accent/20 rounded-full flex items-center justify-center">
-                      <User className="w-5 h-5 text-accent" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Holder Address</p>
-                      <p className="font-semibold font-mono text-sm break-all">{verificationResult.studentName}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-success/20 rounded-full flex items-center justify-center">
-                      <Building className="w-5 h-5 text-success" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Issuer Address</p>
-                      <p className="font-semibold font-mono text-sm break-all">{verificationResult.issuerName}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-primary-glow/20 rounded-full flex items-center justify-center">
-                      <Calendar className="w-5 h-5 text-primary-glow" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Date Issued</p>
-                      <p className="font-semibold">
-                        {verificationResult.dateIssued &&
-                          new Date(verificationResult.dateIssued).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {verificationResult.transactionHash && (
-                  <div className="md:col-span-2 mt-6 p-4 bg-muted/30 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-muted-foreground mb-1">Blockchain Transaction</p>
-                        <p className="font-mono text-sm break-all">{verificationResult.transactionHash}</p>
+            {record && (
+              <>
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-primary/20 rounded-full flex items-center justify-center shrink-0">
+                        <Shield className="w-5 h-5 text-primary" />
                       </div>
-                      <Button variant="outline" size="sm">
-                        <ExternalLink className="w-4 h-4 mr-2" />
-                        View on Sepolia Explorer
-                      </Button>
+                      <div className="min-w-0">
+                        <p className="text-sm text-muted-foreground">Credential</p>
+                        {record.metadata ? (
+                          <p className="font-semibold">{record.metadata.title}</p>
+                        ) : (
+                          <p className="font-semibold flex items-center gap-2 text-muted-foreground">
+                            <Lock className="w-4 h-4" />
+                            Encrypted — no key provided
+                          </p>
+                        )}
+                      </div>
                     </div>
+
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-accent/20 rounded-full flex items-center justify-center shrink-0">
+                        <User className="w-5 h-5 text-accent" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm text-muted-foreground">Holder</p>
+                        <p className="font-semibold font-mono text-sm break-all">
+                          {record.metadata?.holderName ?? record.holder}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-success/20 rounded-full flex items-center justify-center shrink-0">
+                        <Building className="w-5 h-5 text-success" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm text-muted-foreground">Issued by</p>
+                        <p className="font-semibold break-words">{record.issuerName}</p>
+                        <p className="font-mono text-xs text-muted-foreground break-all">{record.issuer}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-primary-glow/20 rounded-full flex items-center justify-center shrink-0">
+                        <Calendar className="w-5 h-5 text-primary-glow" />
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Date Issued</p>
+                        <p className="font-semibold">{record.issuedAt.toLocaleDateString()}</p>
+                        {record.expiresAt && (
+                          <p className="text-xs text-muted-foreground">
+                            Expires {record.expiresAt.toLocaleDateString()}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {record.metadata?.description && (
+                  <div className="mt-6 p-4 bg-muted/30 rounded-lg">
+                    <p className="text-sm text-muted-foreground mb-1">Details</p>
+                    <p className="text-sm">{record.metadata.description}</p>
                   </div>
                 )}
-              </div>
+
+                {/* Document integrity — the point of hashing the file itself */}
+                <div className="mt-6 p-4 bg-muted/30 rounded-lg">
+                  <div className="flex items-start justify-between gap-4 flex-wrap">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold mb-1">Check a document</p>
+                      <p className="text-sm text-muted-foreground">
+                        Upload the certificate you were given. We recompute its hash and compare it to the one recorded
+                        on-chain — proving it is byte-for-byte the document that was issued.
+                      </p>
+                    </div>
+                    <input
+                      ref={documentInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={handleDocumentCheck}
+                      accept=".pdf,.png,.jpg,.jpeg"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => documentInputRef.current?.click()}
+                      disabled={documentCheck === "checking"}
+                    >
+                      <FileCheck className="w-4 h-4 mr-2" />
+                      {documentCheck === "checking" ? "Hashing…" : "Select file"}
+                    </Button>
+                  </div>
+
+                  {documentCheck === "match" && (
+                    <div className="mt-4 flex items-center gap-2 text-success">
+                      <CheckCircle className="w-5 h-5" />
+                      <span className="font-semibold">Exact match — this is the issued document.</span>
+                    </div>
+                  )}
+                  {documentCheck === "mismatch" && (
+                    <div className="mt-4 flex items-center gap-2 text-destructive">
+                      <XCircle className="w-5 h-5" />
+                      <span className="font-semibold">
+                        No match — this file differs from the one recorded on-chain.
+                      </span>
+                    </div>
+                  )}
+
+                  <p className="font-mono text-xs text-muted-foreground mt-3 break-all">
+                    On-chain hash: {record.documentHash}
+                  </p>
+                </div>
+
+                <div className="mt-6 p-4 bg-muted/30 rounded-lg">
+                  <div className="flex items-center justify-between gap-4 flex-wrap">
+                    <div className="min-w-0">
+                      <p className="text-sm text-muted-foreground mb-1">Verified against contract</p>
+                      <p className="font-mono text-sm break-all">{CONTRACT_ADDRESS}</p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        window.open(`https://sepolia.etherscan.io/address/${CONTRACT_ADDRESS}`, "_blank")
+                      }
+                    >
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      View on Etherscan
+                    </Button>
+                  </div>
+                </div>
+              </>
             )}
 
-            {!verificationResult.isValid && verificationResult.error && (
+            {error && (
               <div className="mt-6 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
                 <div className="flex items-start space-x-3">
                   <AlertTriangle className="w-5 h-5 text-destructive mt-0.5" />
                   <div>
                     <p className="font-semibold text-destructive mb-1">Verification Error</p>
-                    <p className="text-sm text-destructive/80">{verificationResult.error}</p>
+                    <p className="text-sm text-destructive/80">{error}</p>
                   </div>
                 </div>
               </div>
@@ -440,7 +506,6 @@ export default function VerifierPage() {
           </Card>
         )}
 
-        {/* Info Section */}
         <div className="mt-12 text-center">
           <h3 className="text-xl font-semibold mb-4">How Verification Works</h3>
           <div className="grid md:grid-cols-3 gap-6">
@@ -449,33 +514,38 @@ export default function VerifierPage() {
                 <QrCode className="w-6 h-6 text-primary" />
               </div>
               <p className="font-medium">Scan or Enter</p>
-              <p className="text-sm text-muted-foreground">Use QR code or enter holder address and document hash</p>
+              <p className="text-sm text-muted-foreground">
+                The holder's QR carries their address, the document hash and a decryption key
+              </p>
             </div>
             <div className="space-y-2">
               <div className="w-12 h-12 bg-accent/20 rounded-full flex items-center justify-center mx-auto">
                 <Shield className="w-6 h-6 text-accent" />
               </div>
               <p className="font-medium">Blockchain Check</p>
-              <p className="text-sm text-muted-foreground">Verify against Sepolia network</p>
+              <p className="text-sm text-muted-foreground">
+                Read the record straight from Sepolia — no server involved
+              </p>
             </div>
             <div className="space-y-2">
               <div className="w-12 h-12 bg-success/20 rounded-full flex items-center justify-center mx-auto">
-                <CheckCircle className="w-6 h-6 text-success" />
+                <FileCheck className="w-6 h-6 text-success" />
               </div>
-              <p className="font-medium">Instant Result</p>
-              <p className="text-sm text-muted-foreground">Get verification status immediately</p>
+              <p className="font-medium">Prove the Document</p>
+              <p className="text-sm text-muted-foreground">
+                Re-hash the certificate to confirm it is the exact file that was issued
+              </p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* QR Scanner Dialog */}
       <Dialog open={scanOpen} onOpenChange={setScanOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Scan QR Code</DialogTitle>
             <DialogDescription>
-              Point your camera at a CredVault credential QR code to auto-fill the verification form.
+              Point your camera at a CredVault credential QR code to fill in the form automatically.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col items-center gap-3">
