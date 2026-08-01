@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 
 /**
  * @title CredentialVault
@@ -22,8 +22,12 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
  *      - Credentials start `Pending` and only become `Active` once the holder
  *        accepts. Without this, any authorised issuer could write arbitrary records
  *        against any address unprompted.
+ *
+ *      - Issuers are registered with a human-readable identity. A verifier seeing
+ *        only `0x8cb784…` has no way to judge whether that address is a real
+ *        accredited institution.
  */
-contract CredentialVault is AccessControl {
+contract CredentialVault is AccessControlEnumerable {
     // --- Roles ---
 
     bytes32 public constant ISSUER_ROLE = keccak256("ISSUER_ROLE");
@@ -51,12 +55,20 @@ contract CredentialVault is AccessControl {
         string metadataURI;
     }
 
+    /// @notice Public identity of an issuing institution.
+    struct Issuer {
+        string name;
+        string accreditationId;
+        string website;
+    }
+
     /// @notice Flattened view returned to verifiers.
     struct CredentialView {
         bool isValid;
         bool isExpired;
         Status status;
         address issuer;
+        string issuerName;
         uint48 issuedAt;
         uint48 expiresAt;
         string metadataURI;
@@ -65,6 +77,7 @@ contract CredentialVault is AccessControl {
     // --- Storage ---
 
     mapping(address holder => mapping(bytes32 documentHash => Credential)) public credentials;
+    mapping(address issuer => Issuer) public issuerInfo;
 
     // --- Errors ---
 
@@ -78,6 +91,7 @@ contract CredentialVault is AccessControl {
     error CredentialNotPending();
     error CredentialNotRevocable();
     error CredentialNotRevoked();
+    error IssuerNameRequired();
 
     // --- Events ---
 
@@ -97,18 +111,59 @@ contract CredentialVault is AccessControl {
     event CredentialReinstated(
         address indexed holder, address indexed issuer, bytes32 indexed documentHash, uint48 timestamp
     );
+    event IssuerRegistered(address indexed issuer, string name, string accreditationId, string website);
+    event IssuerDeregistered(address indexed issuer);
 
     // --- Constructor ---
 
-    constructor(address initialAdmin, address[] memory initialIssuers) {
+    constructor(address initialAdmin) {
         if (initialAdmin == address(0)) revert ZeroAddress();
 
         _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
         _setRoleAdmin(ISSUER_ROLE, DEFAULT_ADMIN_ROLE);
+    }
 
-        for (uint256 i = 0; i < initialIssuers.length; ++i) {
-            _grantRole(ISSUER_ROLE, initialIssuers[i]);
+    // --- Issuer registry ---
+
+    /**
+     * @notice Authorise an institution and record its public identity in one step.
+     * @dev Registering and granting together keeps the two from drifting apart —
+     *      an address with ISSUER_ROLE always has a name attached.
+     */
+    function registerIssuer(
+        address issuer,
+        string calldata name,
+        string calldata accreditationId,
+        string calldata website
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (issuer == address(0)) revert ZeroAddress();
+        if (bytes(name).length == 0) revert IssuerNameRequired();
+
+        issuerInfo[issuer] = Issuer({name: name, accreditationId: accreditationId, website: website});
+        _grantRole(ISSUER_ROLE, issuer);
+
+        emit IssuerRegistered(issuer, name, accreditationId, website);
+    }
+
+    /**
+     * @notice Withdraw an institution's authority to issue.
+     * @dev Credentials it already issued stay valid — a university closing down does
+     *      not invalidate the degrees it awarded. Use revokeCredential for that.
+     */
+    function deregisterIssuer(address issuer) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _revokeRole(ISSUER_ROLE, issuer);
+        delete issuerInfo[issuer];
+        emit IssuerDeregistered(issuer);
+    }
+
+    /// @notice Every currently authorised institution.
+    function getIssuers() external view returns (address[] memory) {
+        uint256 count = getRoleMemberCount(ISSUER_ROLE);
+        address[] memory list = new address[](count);
+        for (uint256 i = 0; i < count; ++i) {
+            list[i] = getRoleMember(ISSUER_ROLE, i);
         }
+        return list;
     }
 
     // --- Issuance ---
@@ -212,6 +267,7 @@ contract CredentialVault is AccessControl {
                 isExpired: false,
                 status: Status.None,
                 issuer: address(0),
+                issuerName: "",
                 issuedAt: 0,
                 expiresAt: 0,
                 metadataURI: ""
@@ -225,6 +281,7 @@ contract CredentialVault is AccessControl {
             isExpired: expired,
             status: credential.status,
             issuer: credential.issuer,
+            issuerName: issuerInfo[credential.issuer].name,
             issuedAt: credential.issuedAt,
             expiresAt: credential.expiresAt,
             metadataURI: credential.metadataURI

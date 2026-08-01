@@ -19,11 +19,12 @@ contract CredentialVaultTest is Test {
     string public constant URI = "ipfs://bafyTestMetadataCid";
 
     function setUp() public {
-        address[] memory issuers = new address[](2);
-        issuers[0] = COLLEGE_A;
-        issuers[1] = COLLEGE_B;
+        vault = new CredentialVault(ADMIN);
 
-        vault = new CredentialVault(ADMIN, issuers);
+        vm.startPrank(ADMIN);
+        vault.registerIssuer(COLLEGE_A, "Indian Institute of Technology Delhi", "AICTE-1961-DEL", "https://iitd.ac.in");
+        vault.registerIssuer(COLLEGE_B, "National Institute of Technology Trichy", "AICTE-1964-TRY", "https://nitt.edu");
+        vm.stopPrank();
 
         // Timestamps start at 1 in Foundry; move forward so expiry maths is realistic.
         vm.warp(1_700_000_000);
@@ -262,6 +263,73 @@ contract CredentialVaultTest is Test {
         vault.revokeRole(issuerRole, RANDOM_USER);
         assertFalse(vault.isIssuer(RANDOM_USER));
         vm.stopPrank();
+    }
+
+    // --- Issuer registry ---
+
+    function test_RegisterIssuerGrantsRoleAndIdentity() public {
+        vm.prank(ADMIN);
+        vault.registerIssuer(RANDOM_USER, "Anna University", "AICTE-1978-CHN", "https://annauniv.edu");
+
+        assertTrue(vault.isIssuer(RANDOM_USER), "registration must grant ISSUER_ROLE");
+        (string memory name, string memory accreditation, string memory website) = vault.issuerInfo(RANDOM_USER);
+        assertEq(name, "Anna University");
+        assertEq(accreditation, "AICTE-1978-CHN");
+        assertEq(website, "https://annauniv.edu");
+    }
+
+    function test_VerifyExposesIssuerName() public {
+        _issueAndAccept();
+        CredentialVault.CredentialView memory view_ = vault.verifyCredential(ALICE, DOC_HASH);
+        assertEq(
+            view_.issuerName, "Indian Institute of Technology Delhi", "verifier must see a name, not just an address"
+        );
+    }
+
+    function test_RevertWhen_RegisteringIssuerWithoutName() public {
+        vm.expectRevert(CredentialVault.IssuerNameRequired.selector);
+        vm.prank(ADMIN);
+        vault.registerIssuer(RANDOM_USER, "", "", "");
+    }
+
+    function test_RevertWhen_NonAdminRegistersIssuer() public {
+        bytes32 adminRole = vault.DEFAULT_ADMIN_ROLE();
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, COLLEGE_A, adminRole)
+        );
+        vm.prank(COLLEGE_A);
+        vault.registerIssuer(RANDOM_USER, "Fake University", "", "");
+    }
+
+    function test_GetIssuersListsAllRegistered() public view {
+        address[] memory issuers = vault.getIssuers();
+        assertEq(issuers.length, 2);
+        assertEq(issuers[0], COLLEGE_A);
+        assertEq(issuers[1], COLLEGE_B);
+    }
+
+    function test_DeregisterRemovesAuthorityButKeepsPastCredentialsValid() public {
+        _issueAndAccept();
+
+        vm.prank(ADMIN);
+        vault.deregisterIssuer(COLLEGE_A);
+
+        assertFalse(vault.isIssuer(COLLEGE_A), "must lose issuing authority");
+        assertEq(vault.getIssuers().length, 1);
+        // A closed university does not invalidate the degrees it already awarded.
+        assertTrue(vault.verifyCredential(ALICE, DOC_HASH).isValid, "existing credentials stay valid");
+    }
+
+    function test_RevertWhen_DeregisteredIssuerIssues() public {
+        vm.prank(ADMIN);
+        vault.deregisterIssuer(COLLEGE_A);
+
+        bytes32 issuerRole = vault.ISSUER_ROLE();
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, COLLEGE_A, issuerRole)
+        );
+        vm.prank(COLLEGE_A);
+        vault.issueCredential(ALICE, DOC_HASH, URI, 0);
     }
 
     function test_RevertWhen_NonAdminGrantsIssuerRole() public {
