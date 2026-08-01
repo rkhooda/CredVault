@@ -23,7 +23,7 @@ import {
   Copy,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { getContract, getReadOnlyProvider, DEPLOYMENT_BLOCK } from "@/lib/contract";
+import { queryEventsFromDeployment } from "@/lib/contract";
 
 interface Credential {
   id: string;
@@ -59,14 +59,11 @@ export default function StudentDashboard() {
     setLoading(true);
     setFetchError(null);
     try {
-      const provider = getReadOnlyProvider();
-      const contract = getContract(provider);
-
       // Scan from deployment block so we never miss any events.
       // Both holder params are indexed, so the RPC only returns logs for this wallet.
-      const [issuedEvents, revokedEvents] = await Promise.all([
-        contract.queryFilter(contract.filters.CredentialIssued(address), DEPLOYMENT_BLOCK),
-        contract.queryFilter(contract.filters.CredentialRevoked(address), DEPLOYMENT_BLOCK),
+      const [issuedEvents, revokedEvents] = await queryEventsFromDeployment((contract) => [
+        contract.filters.CredentialIssued(address),
+        contract.filters.CredentialRevoked(address),
       ]);
 
       // O(1) revocation check

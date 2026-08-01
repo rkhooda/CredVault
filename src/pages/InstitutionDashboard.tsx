@@ -18,7 +18,7 @@ import {
   Upload
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { getContract, getReadOnlyProvider, computeDocumentHash, ensureSepolia, DEPLOYMENT_BLOCK } from "@/lib/contract";
+import { getContract, computeDocumentHash, ensureSepolia, queryEventsFromDeployment } from "@/lib/contract";
 
 interface IssuedCredential {
   id: string;
@@ -70,13 +70,10 @@ export default function InstitutionDashboard() {
     setLoading(true);
     setFetchError(null);
     try {
-      const provider = getReadOnlyProvider();
-      const contract = getContract(provider);
-
       // Filter by issuer (second indexed param); null = any holder
-      const [issuedEvents, revokedEvents] = await Promise.all([
-        contract.queryFilter(contract.filters.CredentialIssued(null, issuer), DEPLOYMENT_BLOCK),
-        contract.queryFilter(contract.filters.CredentialRevoked(null, issuer), DEPLOYMENT_BLOCK),
+      const [issuedEvents, revokedEvents] = await queryEventsFromDeployment((contract) => [
+        contract.filters.CredentialIssued(null, issuer),
+        contract.filters.CredentialRevoked(null, issuer),
       ]);
 
       const revokedHashes = new Set(revokedEvents.map((e) => (e as any).args.documentHash));

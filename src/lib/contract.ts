@@ -195,13 +195,38 @@ export const CONTRACT_ADDRESS: string =
 export const CHAIN_ID: number =
   Number((import.meta.env.VITE_CHAIN_ID as string | undefined) ?? 11155111);
 
-// Public Sepolia RPCs — no API key required. Override primary with VITE_RPC_URL.
-// FallbackProvider tries both concurrently (quorum=1), using whichever responds first.
-export const RPC_URL: string =
-  (import.meta.env.VITE_RPC_URL as string | undefined) ??
-  "https://ethereum-sepolia-rpc.publicnode.com";
+// Public Sepolia RPCs — no API key required. VITE_RPC_URL is tried first when set.
+//
+// The dashboards rebuild their credential list from event logs reaching back to
+// DEPLOYMENT_BLOCK, so an endpoint is only usable here if it serves historical
+// logs. Most free endpoints don't: publicnode (the previous default) rejects any
+// eth_getLogs older than ~128 blocks with "Archive requests require a personal
+// token", which is what broke credential loading entirely. Verified against the
+// live contract: Tenderly and OnFinality both serve the full span in one call;
+// drpc has the history but caps each request at 10k blocks, so it needs chunking.
+// Ordered fastest-first — later entries are only reached when earlier ones fail.
+export const RPC_URLS: string[] = [
+  import.meta.env.VITE_RPC_URL as string | undefined,
+  "https://sepolia.gateway.tenderly.co",
+  "https://eth-sepolia.api.onfinality.io/public",
+  "https://sepolia.drpc.org",
+].filter((url): url is string => Boolean(url));
 
-const FALLBACK_RPC_URL = "https://sepolia.drpc.org";
+export const RPC_URL: string = RPC_URLS[0];
+
+// Block span per eth_getLogs request when a provider rejects the full range.
+const LOG_CHUNK_SIZE = 9_000;
+
+// Per-request ceiling. Free endpoints tend to hang rather than refuse, and the
+// dashboard blocks on these calls, so cap the wait and move to the next RPC.
+const RPC_TIMEOUT_MS = 15_000;
+
+/** Builds a Sepolia provider with a bounded request timeout. */
+function createProvider(url: string): ethers.JsonRpcProvider {
+  const request = new ethers.FetchRequest(url);
+  request.timeout = RPC_TIMEOUT_MS;
+  return new ethers.JsonRpcProvider(request, CHAIN_ID, { staticNetwork: true });
+}
 
 /** Returns a contract instance connected to the given provider or signer. */
 export function getContract(providerOrSigner: ethers.ContractRunner) {
@@ -211,10 +236,60 @@ export function getContract(providerOrSigner: ethers.ContractRunner) {
 /**
  * Returns a read-only provider pointing at Sepolia.
  * Used for view calls that don't require a connected wallet.
- * FALLBACK_RPC_URL is available as a manual override via VITE_RPC_URL if the primary goes down.
  */
 export function getReadOnlyProvider(): ethers.JsonRpcProvider {
-  return new ethers.JsonRpcProvider(RPC_URL, CHAIN_ID, { staticNetwork: true });
+  return createProvider(RPC_URL);
+}
+
+/** Scans DEPLOYMENT_BLOCK → head in LOG_CHUNK_SIZE windows, for range-capped RPCs. */
+async function queryFilterChunked(
+  contract: ethers.Contract,
+  filter: ethers.DeferredTopicFilter,
+  head: number,
+): Promise<(ethers.EventLog | ethers.Log)[]> {
+  const logs: (ethers.EventLog | ethers.Log)[] = [];
+  for (let from = DEPLOYMENT_BLOCK; from <= head; from += LOG_CHUNK_SIZE) {
+    const to = Math.min(from + LOG_CHUNK_SIZE - 1, head);
+    logs.push(...(await contract.queryFilter(filter, from, to)));
+  }
+  return logs;
+}
+
+/**
+ * Runs event-log queries from DEPLOYMENT_BLOCK to head, trying each RPC in
+ * RPC_URLS until one succeeds. All filters resolve against the same provider,
+ * so a partial view can't mix results from nodes at different heights.
+ *
+ * Providers that reject the full span are retried in chunks before moving on —
+ * that covers range-capped endpoints without penalising ones that accept it
+ * in a single call. Throws the last error if every provider fails.
+ */
+export async function queryEventsFromDeployment(
+  buildFilters: (contract: ethers.Contract) => ethers.DeferredTopicFilter[],
+): Promise<(ethers.EventLog | ethers.Log)[][]> {
+  let lastError: unknown = new Error("No Sepolia RPC endpoints configured.");
+
+  for (const url of RPC_URLS) {
+    const provider = createProvider(url);
+    const contract = getContract(provider);
+    const filters = buildFilters(contract);
+    try {
+      try {
+        return await Promise.all(filters.map((f) => contract.queryFilter(f, DEPLOYMENT_BLOCK)));
+      } catch (err) {
+        lastError = err;
+        const head = await provider.getBlockNumber();
+        return await Promise.all(filters.map((f) => queryFilterChunked(contract, f, head)));
+      }
+    } catch (err) {
+      lastError = err;
+      console.warn(`Log query failed against ${url}, trying next RPC:`, err);
+    } finally {
+      provider.destroy();
+    }
+  }
+
+  throw lastError;
 }
 
 /**
