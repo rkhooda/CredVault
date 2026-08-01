@@ -116,6 +116,8 @@ contract CredentialVaultTest is Test {
         uris = new string[](n);
         expiries = new uint48[](n);
         for (uint256 i = 0; i < n; ++i) {
+            // casting to 'uint160' is safe because n is bounded by MAX_BATCH + 1
+            // forge-lint: disable-next-line(unsafe-typecast)
             holders[i] = address(uint160(1000 + i));
             hashes[i] = keccak256(abi.encodePacked("graduate", i));
             uris[i] = "ipfs://bafyBatchCid";

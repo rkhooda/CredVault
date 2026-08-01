@@ -201,18 +201,18 @@ contract CredentialVault is AccessControlEnumerable, Pausable {
     function issueBatch(
         address[] calldata holders,
         bytes32[] calldata documentHashes,
-        string[] calldata metadataURIs,
+        string[] calldata metadataUris,
         uint48[] calldata expiries
     ) external onlyRole(ISSUER_ROLE) whenNotPaused {
         uint256 length = holders.length;
         if (length == 0) revert EmptyBatch();
         if (length > MAX_BATCH) revert BatchTooLarge();
-        if (documentHashes.length != length || metadataURIs.length != length || expiries.length != length) {
+        if (documentHashes.length != length || metadataUris.length != length || expiries.length != length) {
             revert BatchLengthMismatch();
         }
 
         for (uint256 i = 0; i < length; ++i) {
-            _issue(holders[i], documentHashes[i], metadataURIs[i], expiries[i]);
+            _issue(holders[i], documentHashes[i], metadataUris[i], expiries[i]);
         }
     }
 

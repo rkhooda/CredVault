@@ -42,8 +42,11 @@ contract DeployVault is Script {
         vm.stopBroadcast();
 
         console.log("CredentialVault deployed at:", address(vault));
-        console.log("Deployment block:          ", block.number);
         console.log("Admin:                     ", admin);
+        // Deliberately not logging block.number: during a broadcast that is the
+        // simulation block, which can trail the block the tx actually lands in.
+        // Read the real one from broadcast/DeployVault.s.sol/<chain>/run-latest.json
+        // and use it as DEPLOYMENT_BLOCK in the frontend.
         if (admin == deployer) {
             console.log("Initial issuer:            ", initialIssuer);
             console.log("Initial issuer name:       ", issuerName);
