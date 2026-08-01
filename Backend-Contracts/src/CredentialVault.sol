@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title CredentialVault
@@ -27,10 +28,13 @@ import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions
  *        only `0x8cb784…` has no way to judge whether that address is a real
  *        accredited institution.
  */
-contract CredentialVault is AccessControlEnumerable {
+contract CredentialVault is AccessControlEnumerable, Pausable {
     // --- Roles ---
 
     bytes32 public constant ISSUER_ROLE = keccak256("ISSUER_ROLE");
+
+    /// @notice Upper bound on a single batch, so a call cannot exceed the block gas limit.
+    uint256 public constant MAX_BATCH = 100;
 
     // --- Types ---
 
@@ -92,6 +96,9 @@ contract CredentialVault is AccessControlEnumerable {
     error CredentialNotRevocable();
     error CredentialNotRevoked();
     error IssuerNameRequired();
+    error EmptyBatch();
+    error BatchTooLarge();
+    error BatchLengthMismatch();
 
     // --- Events ---
 
@@ -178,7 +185,35 @@ contract CredentialVault is AccessControlEnumerable {
     function issueCredential(address holder, bytes32 documentHash, string calldata metadataURI, uint48 expiresAt)
         external
         onlyRole(ISSUER_ROLE)
+        whenNotPaused
     {
+        _issue(holder, documentHash, metadataURI, expiresAt);
+    }
+
+    /**
+     * @notice Issue up to MAX_BATCH credentials in one transaction.
+     * @dev A university awarding thousands of degrees cannot realistically confirm
+     *      one wallet prompt per student. Arrays are parallel and must be equal length.
+     */
+    function issueBatch(
+        address[] calldata holders,
+        bytes32[] calldata documentHashes,
+        string[] calldata metadataURIs,
+        uint48[] calldata expiries
+    ) external onlyRole(ISSUER_ROLE) whenNotPaused {
+        uint256 length = holders.length;
+        if (length == 0) revert EmptyBatch();
+        if (length > MAX_BATCH) revert BatchTooLarge();
+        if (documentHashes.length != length || metadataURIs.length != length || expiries.length != length) {
+            revert BatchLengthMismatch();
+        }
+
+        for (uint256 i = 0; i < length; ++i) {
+            _issue(holders[i], documentHashes[i], metadataURIs[i], expiries[i]);
+        }
+    }
+
+    function _issue(address holder, bytes32 documentHash, string calldata metadataURI, uint48 expiresAt) private {
         if (holder == address(0)) revert ZeroAddress();
         if (documentHash == bytes32(0)) revert EmptyDocumentHash();
         if (bytes(metadataURI).length == 0) revert EmptyMetadataURI();
@@ -198,6 +233,17 @@ contract CredentialVault is AccessControlEnumerable {
         });
 
         emit CredentialIssued(holder, msg.sender, documentHash, metadataURI, uint48(block.timestamp), expiresAt);
+    }
+
+    // --- Emergency controls ---
+
+    /// @notice Halt new issuance. Verification, consent and revocation stay available.
+    function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _pause();
+    }
+
+    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _unpause();
     }
 
     // --- Holder consent ---

@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {CredentialVault} from "../src/CredentialVault.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
 contract CredentialVaultTest is Test {
     CredentialVault public vault;
@@ -100,6 +101,112 @@ contract CredentialVaultTest is Test {
         vm.expectRevert(CredentialVault.CredentialAlreadyExists.selector);
         vm.prank(COLLEGE_A);
         vault.issueCredential(ALICE, DOC_HASH, URI, 0);
+    }
+
+    // --- Batch issuance ---
+
+    /// Builds `n` parallel arrays with distinct holders and document hashes.
+    function _batchOf(uint256 n)
+        internal
+        pure
+        returns (address[] memory holders, bytes32[] memory hashes, string[] memory uris, uint48[] memory expiries)
+    {
+        holders = new address[](n);
+        hashes = new bytes32[](n);
+        uris = new string[](n);
+        expiries = new uint48[](n);
+        for (uint256 i = 0; i < n; ++i) {
+            holders[i] = address(uint160(1000 + i));
+            hashes[i] = keccak256(abi.encodePacked("graduate", i));
+            uris[i] = "ipfs://bafyBatchCid";
+            expiries[i] = 0;
+        }
+    }
+
+    function test_BatchIssuesEveryCredential() public {
+        (address[] memory h, bytes32[] memory d, string[] memory u, uint48[] memory e) = _batchOf(25);
+
+        vm.prank(COLLEGE_A);
+        vault.issueBatch(h, d, u, e);
+
+        for (uint256 i = 0; i < 25; ++i) {
+            CredentialVault.CredentialView memory view_ = vault.verifyCredential(h[i], d[i]);
+            assertEq(uint8(view_.status), uint8(CredentialVault.Status.Pending));
+            assertEq(view_.issuer, COLLEGE_A);
+        }
+    }
+
+    function test_RevertWhen_BatchArraysMismatch() public {
+        (address[] memory h, bytes32[] memory d, string[] memory u,) = _batchOf(3);
+        uint48[] memory shortExpiries = new uint48[](2);
+
+        vm.expectRevert(CredentialVault.BatchLengthMismatch.selector);
+        vm.prank(COLLEGE_A);
+        vault.issueBatch(h, d, u, shortExpiries);
+    }
+
+    function test_RevertWhen_BatchIsEmpty() public {
+        (address[] memory h, bytes32[] memory d, string[] memory u, uint48[] memory e) = _batchOf(0);
+        vm.expectRevert(CredentialVault.EmptyBatch.selector);
+        vm.prank(COLLEGE_A);
+        vault.issueBatch(h, d, u, e);
+    }
+
+    function test_RevertWhen_BatchExceedsMaxSize() public {
+        (address[] memory h, bytes32[] memory d, string[] memory u, uint48[] memory e) = _batchOf(101);
+        vm.expectRevert(CredentialVault.BatchTooLarge.selector);
+        vm.prank(COLLEGE_A);
+        vault.issueBatch(h, d, u, e);
+    }
+
+    /// One bad entry must roll back the whole batch, not silently skip.
+    function test_RevertWhen_BatchContainsInvalidEntry() public {
+        (address[] memory h, bytes32[] memory d, string[] memory u, uint48[] memory e) = _batchOf(3);
+        d[1] = bytes32(0);
+
+        vm.expectRevert(CredentialVault.EmptyDocumentHash.selector);
+        vm.prank(COLLEGE_A);
+        vault.issueBatch(h, d, u, e);
+
+        assertEq(uint8(vault.verifyCredential(h[0], d[0]).status), uint8(CredentialVault.Status.None));
+    }
+
+    // --- Pause ---
+
+    function test_PauseBlocksIssuanceButNotVerificationOrRevocation() public {
+        _issueAndAccept();
+
+        vm.prank(ADMIN);
+        vault.pause();
+
+        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.prank(COLLEGE_A);
+        vault.issueCredential(ALICE, keccak256("another.pdf"), URI, 0);
+
+        // Reading and withdrawing must keep working while paused.
+        assertTrue(vault.verifyCredential(ALICE, DOC_HASH).isValid);
+        vm.prank(COLLEGE_A);
+        vault.revokeCredential(ALICE, DOC_HASH);
+        assertFalse(vault.verifyCredential(ALICE, DOC_HASH).isValid);
+    }
+
+    function test_UnpauseRestoresIssuance() public {
+        vm.startPrank(ADMIN);
+        vault.pause();
+        vault.unpause();
+        vm.stopPrank();
+
+        _issue();
+        assertEq(uint8(vault.verifyCredential(ALICE, DOC_HASH).status), uint8(CredentialVault.Status.Pending));
+    }
+
+    function test_RevertWhen_NonAdminPauses() public {
+        bytes32 adminRole = vault.DEFAULT_ADMIN_ROLE();
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, COLLEGE_A, adminRole)
+        );
+        vm.prank(COLLEGE_A);
+        vault.pause();
     }
 
     // --- Holder consent ---
