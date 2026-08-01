@@ -1,0 +1,238 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+
+/**
+ * @title CredentialVault
+ * @notice Issuance, holder consent, revocation and public verification of academic
+ *         and professional credentials.
+ *
+ * @dev Design notes:
+ *
+ *      - `documentHash` is keccak256 of the credential file's raw bytes. Hashing the
+ *        actual document (rather than a few descriptive strings) means the hash is
+ *        high-entropy, cannot be guessed, and lets a verifier prove a file they hold
+ *        is byte-identical to the one that was issued.
+ *
+ *      - `metadataURI` points at an encrypted JSON blob on IPFS. The chain is the
+ *        source of truth for *validity*; IPFS carries the *content*. Nothing here
+ *        depends on any server, so verification works as long as the chain does.
+ *
+ *      - Credentials start `Pending` and only become `Active` once the holder
+ *        accepts. Without this, any authorised issuer could write arbitrary records
+ *        against any address unprompted.
+ */
+contract CredentialVault is AccessControl {
+    // --- Roles ---
+
+    bytes32 public constant ISSUER_ROLE = keccak256("ISSUER_ROLE");
+
+    // --- Types ---
+
+    /// @notice Lifecycle of a single credential.
+    /// None -> Pending -> Active   (holder accepts)
+    ///                 -> Rejected (holder declines; issuer may re-issue)
+    /// Pending/Active  -> Revoked  (issuing institution withdraws it)
+    /// Revoked         -> Active   (issuer reinstates a mistaken revocation)
+    enum Status {
+        None,
+        Pending,
+        Active,
+        Rejected,
+        Revoked
+    }
+
+    struct Credential {
+        address issuer;
+        uint48 issuedAt;
+        uint48 expiresAt; // 0 = never expires
+        Status status;
+        string metadataURI;
+    }
+
+    /// @notice Flattened view returned to verifiers.
+    struct CredentialView {
+        bool isValid;
+        bool isExpired;
+        Status status;
+        address issuer;
+        uint48 issuedAt;
+        uint48 expiresAt;
+        string metadataURI;
+    }
+
+    // --- Storage ---
+
+    mapping(address holder => mapping(bytes32 documentHash => Credential)) public credentials;
+
+    // --- Errors ---
+
+    error ZeroAddress();
+    error EmptyDocumentHash();
+    error EmptyMetadataURI();
+    error ExpiryInPast();
+    error CredentialAlreadyExists();
+    error CredentialNotFound();
+    error NotIssuingInstitution();
+    error CredentialNotPending();
+    error CredentialNotRevocable();
+    error CredentialNotRevoked();
+
+    // --- Events ---
+
+    event CredentialIssued(
+        address indexed holder,
+        address indexed issuer,
+        bytes32 indexed documentHash,
+        string metadataURI,
+        uint48 issuedAt,
+        uint48 expiresAt
+    );
+    event CredentialAccepted(address indexed holder, bytes32 indexed documentHash, uint48 timestamp);
+    event CredentialRejected(address indexed holder, bytes32 indexed documentHash, uint48 timestamp);
+    event CredentialRevoked(
+        address indexed holder, address indexed issuer, bytes32 indexed documentHash, uint48 timestamp
+    );
+    event CredentialReinstated(
+        address indexed holder, address indexed issuer, bytes32 indexed documentHash, uint48 timestamp
+    );
+
+    // --- Constructor ---
+
+    constructor(address initialAdmin, address[] memory initialIssuers) {
+        if (initialAdmin == address(0)) revert ZeroAddress();
+
+        _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
+        _setRoleAdmin(ISSUER_ROLE, DEFAULT_ADMIN_ROLE);
+
+        for (uint256 i = 0; i < initialIssuers.length; ++i) {
+            _grantRole(ISSUER_ROLE, initialIssuers[i]);
+        }
+    }
+
+    // --- Issuance ---
+
+    /**
+     * @notice Issue a credential to `holder`. Starts as `Pending` until accepted.
+     * @param holder       Wallet the credential belongs to.
+     * @param documentHash keccak256 of the credential file's bytes.
+     * @param metadataURI  IPFS URI of the encrypted metadata blob.
+     * @param expiresAt    Unix seconds after which the credential is no longer valid; 0 = never.
+     */
+    function issueCredential(address holder, bytes32 documentHash, string calldata metadataURI, uint48 expiresAt)
+        external
+        onlyRole(ISSUER_ROLE)
+    {
+        if (holder == address(0)) revert ZeroAddress();
+        if (documentHash == bytes32(0)) revert EmptyDocumentHash();
+        if (bytes(metadataURI).length == 0) revert EmptyMetadataURI();
+        if (expiresAt != 0 && expiresAt <= block.timestamp) revert ExpiryInPast();
+
+        // A rejected credential may be re-issued (e.g. the institution corrected a
+        // mistake). Anything else already occupies this slot.
+        Status current = credentials[holder][documentHash].status;
+        if (current != Status.None && current != Status.Rejected) revert CredentialAlreadyExists();
+
+        credentials[holder][documentHash] = Credential({
+            issuer: msg.sender,
+            issuedAt: uint48(block.timestamp),
+            expiresAt: expiresAt,
+            status: Status.Pending,
+            metadataURI: metadataURI
+        });
+
+        emit CredentialIssued(holder, msg.sender, documentHash, metadataURI, uint48(block.timestamp), expiresAt);
+    }
+
+    // --- Holder consent ---
+
+    /// @notice Accept a credential issued to the caller.
+    function acceptCredential(bytes32 documentHash) external {
+        Credential storage credential = _pendingFor(msg.sender, documentHash);
+        credential.status = Status.Active;
+        emit CredentialAccepted(msg.sender, documentHash, uint48(block.timestamp));
+    }
+
+    /// @notice Decline a credential issued to the caller.
+    function rejectCredential(bytes32 documentHash) external {
+        Credential storage credential = _pendingFor(msg.sender, documentHash);
+        credential.status = Status.Rejected;
+        emit CredentialRejected(msg.sender, documentHash, uint48(block.timestamp));
+    }
+
+    function _pendingFor(address holder, bytes32 documentHash) private view returns (Credential storage) {
+        Credential storage credential = credentials[holder][documentHash];
+        if (credential.issuer == address(0)) revert CredentialNotFound();
+        if (credential.status != Status.Pending) revert CredentialNotPending();
+        return credential;
+    }
+
+    // --- Revocation ---
+
+    /**
+     * @notice Withdraw a credential. Only the institution that issued it may do so —
+     *         without this check any authorised issuer could revoke a competitor's
+     *         credentials.
+     */
+    function revokeCredential(address holder, bytes32 documentHash) external {
+        Credential storage credential = credentials[holder][documentHash];
+
+        if (credential.issuer == address(0)) revert CredentialNotFound();
+        if (credential.issuer != msg.sender) revert NotIssuingInstitution();
+        if (credential.status != Status.Pending && credential.status != Status.Active) {
+            revert CredentialNotRevocable();
+        }
+
+        credential.status = Status.Revoked;
+        emit CredentialRevoked(holder, msg.sender, documentHash, uint48(block.timestamp));
+    }
+
+    /// @notice Undo a revocation. Restores the credential to `Active`.
+    function reinstateCredential(address holder, bytes32 documentHash) external {
+        Credential storage credential = credentials[holder][documentHash];
+
+        if (credential.issuer == address(0)) revert CredentialNotFound();
+        if (credential.issuer != msg.sender) revert NotIssuingInstitution();
+        if (credential.status != Status.Revoked) revert CredentialNotRevoked();
+
+        credential.status = Status.Active;
+        emit CredentialReinstated(holder, msg.sender, documentHash, uint48(block.timestamp));
+    }
+
+    // --- Verification ---
+
+    /// @notice Full public verification. Returns a zeroed view when no record exists.
+    function verifyCredential(address holder, bytes32 documentHash) external view returns (CredentialView memory) {
+        Credential memory credential = credentials[holder][documentHash];
+
+        if (credential.issuer == address(0)) {
+            return CredentialView({
+                isValid: false,
+                isExpired: false,
+                status: Status.None,
+                issuer: address(0),
+                issuedAt: 0,
+                expiresAt: 0,
+                metadataURI: ""
+            });
+        }
+
+        bool expired = credential.expiresAt != 0 && block.timestamp >= credential.expiresAt;
+
+        return CredentialView({
+            isValid: credential.status == Status.Active && !expired,
+            isExpired: expired,
+            status: credential.status,
+            issuer: credential.issuer,
+            issuedAt: credential.issuedAt,
+            expiresAt: credential.expiresAt,
+            metadataURI: credential.metadataURI
+        });
+    }
+
+    /// @notice Convenience check used by the institution login flow.
+    function isIssuer(address account) external view returns (bool) {
+        return hasRole(ISSUER_ROLE, account);
+    }
+}
