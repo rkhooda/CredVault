@@ -1,196 +1,15 @@
 import { ethers } from "ethers";
+import { CREDENTIAL_VAULT_ABI } from "./credentialVaultAbi";
 
-// ABI hand-derived from Backend-Contracts/src/CredntialVault.sol + OZ AccessControl
-export const CREDENTIAL_VAULT_ABI = [
-  // --- Custom contract functions ---
-  {
-    inputs: [
-      { internalType: "address", name: "_holder", type: "address" },
-      { internalType: "bytes32", name: "_documentHash", type: "bytes32" },
-    ],
-    name: "issueCredential",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [
-      { internalType: "address", name: "_holder", type: "address" },
-      { internalType: "bytes32", name: "_documentHash", type: "bytes32" },
-    ],
-    name: "revokeCredential",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [
-      { internalType: "address", name: "_holder", type: "address" },
-      { internalType: "bytes32", name: "_documentHash", type: "bytes32" },
-    ],
-    name: "verifyCredential",
-    outputs: [
-      { internalType: "bool", name: "isValid", type: "bool" },
-      { internalType: "address", name: "issuer", type: "address" },
-      { internalType: "uint256", name: "timestamp", type: "uint256" },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [{ internalType: "address", name: "_addr", type: "address" }],
-    name: "isIssuer",
-    outputs: [{ internalType: "bool", name: "", type: "bool" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  // Public mapping getter: issuedCredentials[holder][hash]
-  {
-    inputs: [
-      { internalType: "address", name: "", type: "address" },
-      { internalType: "bytes32", name: "", type: "bytes32" },
-    ],
-    name: "issuedCredentials",
-    outputs: [
-      { internalType: "address", name: "issuer", type: "address" },
-      { internalType: "uint48", name: "issueTimestamp", type: "uint48" },
-      { internalType: "bool", name: "isRevoked", type: "bool" },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-  // Role constants
-  {
-    inputs: [],
-    name: "ISSUER_ROLE",
-    outputs: [{ internalType: "bytes32", name: "", type: "bytes32" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "DEFAULT_ADMIN_ROLE",
-    outputs: [{ internalType: "bytes32", name: "", type: "bytes32" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  // --- Inherited AccessControl functions ---
-  {
-    inputs: [
-      { internalType: "bytes32", name: "role", type: "bytes32" },
-      { internalType: "address", name: "account", type: "address" },
-    ],
-    name: "hasRole",
-    outputs: [{ internalType: "bool", name: "", type: "bool" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [{ internalType: "bytes32", name: "role", type: "bytes32" }],
-    name: "getRoleAdmin",
-    outputs: [{ internalType: "bytes32", name: "", type: "bytes32" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [
-      { internalType: "bytes32", name: "role", type: "bytes32" },
-      { internalType: "address", name: "account", type: "address" },
-    ],
-    name: "grantRole",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [
-      { internalType: "bytes32", name: "role", type: "bytes32" },
-      { internalType: "address", name: "account", type: "address" },
-    ],
-    name: "revokeRole",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [
-      { internalType: "bytes32", name: "role", type: "bytes32" },
-      { internalType: "address", name: "callerConfirmation", type: "address" },
-    ],
-    name: "renounceRole",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [{ internalType: "bytes4", name: "interfaceId", type: "bytes4" }],
-    name: "supportsInterface",
-    outputs: [{ internalType: "bool", name: "", type: "bool" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  // --- Events ---
-  {
-    anonymous: false,
-    inputs: [
-      { indexed: true, internalType: "address", name: "holder", type: "address" },
-      { indexed: true, internalType: "address", name: "issuer", type: "address" },
-      { indexed: true, internalType: "bytes32", name: "documentHash", type: "bytes32" },
-      { indexed: false, internalType: "uint256", name: "timestamp", type: "uint256" },
-    ],
-    name: "CredentialIssued",
-    type: "event",
-  },
-  {
-    anonymous: false,
-    inputs: [
-      { indexed: true, internalType: "address", name: "holder", type: "address" },
-      { indexed: true, internalType: "address", name: "issuer", type: "address" },
-      { indexed: true, internalType: "bytes32", name: "documentHash", type: "bytes32" },
-      { indexed: false, internalType: "uint256", name: "timestamp", type: "uint256" },
-    ],
-    name: "CredentialRevoked",
-    type: "event",
-  },
-  {
-    anonymous: false,
-    inputs: [
-      { indexed: true, internalType: "bytes32", name: "role", type: "bytes32" },
-      { indexed: true, internalType: "address", name: "account", type: "address" },
-      { indexed: true, internalType: "address", name: "sender", type: "address" },
-    ],
-    name: "RoleGranted",
-    type: "event",
-  },
-  {
-    anonymous: false,
-    inputs: [
-      { indexed: true, internalType: "bytes32", name: "role", type: "bytes32" },
-      { indexed: true, internalType: "address", name: "account", type: "address" },
-      { indexed: true, internalType: "address", name: "sender", type: "address" },
-    ],
-    name: "RoleRevoked",
-    type: "event",
-  },
-  {
-    anonymous: false,
-    inputs: [
-      { indexed: true, internalType: "bytes32", name: "role", type: "bytes32" },
-      { indexed: true, internalType: "bytes32", name: "previousAdminRole", type: "bytes32" },
-      { indexed: true, internalType: "bytes32", name: "newAdminRole", type: "bytes32" },
-    ],
-    name: "RoleAdminChanged",
-    type: "event",
-  },
-] as const;
+export { CREDENTIAL_VAULT_ABI } from "./credentialVaultAbi";
 
 // Block at which the contract was deployed — used as the floor for event-log scans.
-export const DEPLOYMENT_BLOCK = 11245046;
+export const DEPLOYMENT_BLOCK = 11398037;
 
 // Fall back to hardcoded constants so the app works without a .env.local on other machines
 export const CONTRACT_ADDRESS: string =
   (import.meta.env.VITE_CONTRACT_ADDRESS as string | undefined) ??
-  "0xb93E8364b030877C14c47E262C2e9822A2a364f9";
+  "0x26Eb4c3f71ab6735e6c4b5a04D88fa902c46C8B3";
 
 export const CHAIN_ID: number =
   Number((import.meta.env.VITE_CHAIN_ID as string | undefined) ?? 11155111);
@@ -292,19 +111,9 @@ export async function queryEventsFromDeployment(
   throw lastError;
 }
 
-/**
- * Computes the document hash used by the contract.
- * Matches: keccak256(abi.encodePacked(holderAddress, credentialTitle, credentialType))
- */
-export function computeDocumentHash(
-  holderAddress: string,
-  title: string,
-  credentialType: string
-): string {
-  return ethers.solidityPackedKeccak256(
-    ["address", "string", "string"],
-    [holderAddress, title, credentialType]
-  );
+/** The EIP-1193 provider MetaMask injects, when one is present. */
+export function getInjectedProvider(): ethers.Eip1193Provider | undefined {
+  return (window as Window & { ethereum?: ethers.Eip1193Provider }).ethereum;
 }
 
 /**
@@ -313,14 +122,14 @@ export function computeDocumentHash(
  * Throws if the user cancels or MetaMask isn't installed.
  */
 export async function ensureSepolia(): Promise<void> {
-  const ethereum = (window as Window & { ethereum?: any }).ethereum;
+  const ethereum = getInjectedProvider();
   if (!ethereum) throw new Error("MetaMask is not installed.");
   const hexChainId = `0x${CHAIN_ID.toString(16)}`; // "0xaa36a7"
   try {
     await ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexChainId }] });
-  } catch (err: any) {
+  } catch (err) {
     // 4902 = chain not yet added to the wallet
-    if (err?.code === 4902) {
+    if ((err as { code?: number })?.code === 4902) {
       await ethereum.request({
         method: "wallet_addEthereumChain",
         params: [{
