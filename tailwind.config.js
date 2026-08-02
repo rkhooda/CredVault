@@ -20,7 +20,7 @@ export default {
     extend: {
       fontFamily: {
         // Self-hosted in index.css. Mono is reserved for cryptographic material.
-        sans: ['"Inter Tight"', "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
+        sans: ["Geist", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
         mono: ['"JetBrains Mono"', "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
         serif: ['"Source Serif"', "Georgia", "serif"],
       },

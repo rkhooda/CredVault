@@ -36,27 +36,13 @@ function Hero({ record, loading }: { record: CredentialRecord | null; loading: b
 
       <div className="relative mx-auto grid max-w-7xl items-center gap-12 px-4 py-20 sm:px-6 lg:grid-cols-[1.05fr_minmax(0,0.95fr)] lg:gap-16 lg:px-8 lg:py-28">
         <div>
-          <a
-            href={contractUrl()}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
-            Live on Sepolia
-            <span className="font-mono">
-              {CONTRACT_ADDRESS.slice(0, 6)}…{CONTRACT_ADDRESS.slice(-4)}
-            </span>
-          </a>
-
-          <h1 className="mt-6 text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl lg:text-[3.4rem]">
-            Academic records anyone can verify, and no one can quietly rewrite.
+          <h1 className="text-4xl font-semibold leading-[1.03] tracking-tight sm:text-5xl lg:text-[3.75rem]">
+            Credentials anyone
+            <br className="hidden sm:block" /> can <span className="text-primary">verify</span>.
           </h1>
 
-          <p className="mt-6 max-w-xl text-base leading-relaxed text-muted-foreground">
-            An institution issues a credential to a public ledger and binds it to the document by hash. The contents
-            stay encrypted, and the student holds the only key. A verifier can prove the file in their hand is the exact
-            one that was issued — without an account, an API key, or permission from anyone.
+          <p className="mt-6 max-w-md text-base leading-relaxed text-muted-foreground sm:text-lg">
+            The chain proves it. A hash binds it to the document. The student holds the only key that reads it.
           </p>
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
