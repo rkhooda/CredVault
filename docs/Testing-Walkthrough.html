@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>CredVault — Testing Walkthrough</title>
+    <style>
+      @font-face {
+        font-family: "Geist";
+        font-weight: 100 900;
+        src: url("../src/assets/fonts/geist-latin.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "JetBrains Mono";
+        font-weight: 400 700;
+        src: url("../src/assets/fonts/jetbrains-mono-latin.woff2") format("woff2");
+      }
+
+      @page {
+        size: A4;
+        margin: 16mm 15mm 18mm;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Geist", -apple-system, sans-serif;
+        font-size: 10.2pt;
+        line-height: 1.5;
+        color: #14171f;
+        -webkit-font-smoothing: antialiased;
+      }
+      code, .mono { font-family: "JetBrains Mono", monospace; font-variant-ligatures: none; }
+
+      h1 { font-size: 25pt; letter-spacing: -0.03em; margin: 0 0 4px; font-weight: 600; }
+      h2 {
+        font-size: 13pt; letter-spacing: -0.015em; margin: 26px 0 10px; font-weight: 600;
+        padding-bottom: 5px; border-bottom: 1.5px solid #14171f; break-after: avoid;
+      }
+      h3 { font-size: 10.8pt; margin: 16px 0 5px; font-weight: 600; break-after: avoid; }
+      p { margin: 0 0 8px; }
+      .lede { color: #4b5262; font-size: 11pt; margin-bottom: 2px; }
+      .meta { color: #6b7280; font-size: 8.6pt; margin-top: 10px; }
+
+      .cover { border-bottom: 2.5px solid #14171f; padding-bottom: 14px; margin-bottom: 4px; }
+
+      ol, ul { margin: 0 0 10px; padding-left: 19px; }
+      li { margin-bottom: 5px; }
+      ol.steps { counter-reset: s; list-style: none; padding-left: 0; }
+      ol.steps > li {
+        counter-increment: s; position: relative; padding-left: 30px; margin-bottom: 11px;
+        break-inside: avoid;
+      }
+      ol.steps > li::before {
+        content: counter(s); position: absolute; left: 0; top: 0.5px;
+        width: 20px; height: 20px; border-radius: 50%; background: #14171f; color: #fff;
+        font-size: 8.4pt; font-weight: 600; display: flex; align-items: center; justify-content: center;
+        font-family: "JetBrains Mono", monospace;
+      }
+
+      .note, .warn, .key {
+        border-left: 3px solid #1449c9; background: #f4f7fe; padding: 10px 13px;
+        margin: 12px 0; border-radius: 0 4px 4px 0; break-inside: avoid;
+      }
+      .warn { border-left-color: #b45309; background: #fdf7ec; }
+      .key { border-left-color: #17794e; background: #f1f8f4; }
+      .note p:last-child, .warn p:last-child, .key p:last-child { margin-bottom: 0; }
+      .label {
+        font-size: 7.8pt; text-transform: uppercase; letter-spacing: 0.09em;
+        font-weight: 700; display: block; margin-bottom: 3px;
+      }
+      .note .label { color: #1449c9; }
+      .warn .label { color: #b45309; }
+      .key  .label { color: #17794e; }
+
+      table { width: 100%; border-collapse: collapse; margin: 10px 0 12px; font-size: 9.4pt; }
+      th, td { text-align: left; padding: 6px 9px; border-bottom: 1px solid #e2e6ee; vertical-align: top; }
+      th { font-size: 7.9pt; text-transform: uppercase; letter-spacing: 0.07em; color: #4b5262; border-bottom: 1.5px solid #c9cfda; }
+      td.mono { font-size: 8.4pt; word-break: break-all; }
+
+      .chip {
+        display: inline-block; font-family: "JetBrains Mono", monospace; font-size: 8.4pt;
+        background: #eef1f6; border: 1px solid #dfe3ea; border-radius: 3px; padding: 0.5px 5px;
+      }
+      .who {
+        display: inline-block; font-size: 7.8pt; font-weight: 700; letter-spacing: 0.06em;
+        text-transform: uppercase; padding: 1.5px 7px; border-radius: 3px; margin-right: 6px;
+        vertical-align: 1.5px;
+      }
+      .who-a { background: #1449c9; color: #fff; }
+      .who-b { background: #17794e; color: #fff; }
+      .who-c { background: #4b5262; color: #fff; }
+
+      .box { border: 1px solid #dfe3ea; border-radius: 5px; padding: 11px 13px; margin: 10px 0; break-inside: avoid; }
+      .page-break { break-before: page; }
+      .check { list-style: none; padding-left: 0; }
+      .check li { padding-left: 22px; position: relative; }
+      .check li::before {
+        content: ""; position: absolute; left: 0; top: 3.5px; width: 11px; height: 11px;
+        border: 1.5px solid #8a93a3; border-radius: 2.5px;
+      }
+      hr { border: 0; border-top: 1px solid #e2e6ee; margin: 18px 0; }
+      .footer { margin-top: 22px; padding-top: 9px; border-top: 1px solid #e2e6ee; color: #6b7280; font-size: 8.4pt; }
+    </style>
+  </head>
+
+  <body>
+    <div class="cover">
+      <h1>CredVault — Testing Walkthrough</h1>
+      <p class="lede">Run the whole system end to end, from nothing to a verified credential.</p>
+    </div>
+    <p class="meta">
+      Written for demoing and recording. It covers what to click and what you should see — not how any of it
+      works internally. For the architecture and threat model, see <span class="chip">Backend-Contracts/README.md</span>.
+    </p>
+
+    <h2>The three roles</h2>
+    <p>
+      Everything in CredVault is one of three people. You will play all three, switching MetaMask accounts as you go.
+      Keeping them straight is the whole trick to a clean recording.
+    </p>
+
+    <table>
+      <tr>
+        <th style="width: 108px">Role</th>
+        <th style="width: 128px">Needs</th>
+        <th>What they do</th>
+      </tr>
+      <tr>
+        <td><span class="who who-a">Institution</span></td>
+        <td>The registered issuer wallet + Sepolia ETH</td>
+        <td>Uploads a document, fills in the credential, signs twice, hands over a claim code.</td>
+      </tr>
+      <tr>
+        <td><span class="who who-b">Student</span></td>
+        <td>Any second wallet + Sepolia ETH</td>
+        <td>Accepts or declines the credential, saves the key, shares it with an employer.</td>
+      </tr>
+      <tr>
+        <td><span class="who who-c">Verifier</span></td>
+        <td>Nothing at all</td>
+        <td>Checks a credential. No wallet, no account, no permission needed.</td>
+      </tr>
+    </table>
+
+    <div class="key">
+      <span class="label">Read this before anything else — what "the key" actually is</span>
+      <p>
+        The key is <strong>not a login</strong>. The student never needs it to sign in — they sign in by
+        connecting their wallet, full stop.
+      </p>
+      <p>
+        The key only decides whether the credential's <em>contents</em> are readable. Without it, the student still
+        sees the credential exists, who issued it, when, and whether it is valid — and can still accept or decline
+        it. The title and details just show as <em>"Encrypted credential"</em>.
+      </p>
+      <p>
+        The key is generated once, at issuance, and appears in a single dialog on the institution's screen. Copy it
+        then, or the institution has to issue the credential again to produce it. It lives only in the browser you
+        paste it into.
+      </p>
+    </div>
+
+    <h2>Before you start</h2>
+
+    <ol class="steps">
+      <li>
+        <strong>Install MetaMask</strong> and create <strong>two accounts</strong> in it. Account&nbsp;A is the
+        institution, Account&nbsp;B is the student. In MetaMask: avatar menu → <em>Add account</em>.
+      </li>
+      <li>
+        <strong>Switch to Sepolia.</strong> Network dropdown → enable <em>Show test networks</em> → pick Sepolia.
+        The app will also offer to switch for you.
+      </li>
+      <li>
+        <strong>Fund both accounts</strong> with Sepolia ETH from a faucet — e.g.
+        <span class="chip">sepoliafaucet.com</span> or <span class="chip">cloud.google.com/application/web3/faucet</span>.
+        A little goes a long way; both accounts need gas to sign.
+      </li>
+      <li>
+        <strong>Account A must be the registered issuer.</strong> Only a wallet holding
+        <span class="chip">ISSUER_ROLE</span> can issue. On the live deployment that is
+        <span class="chip">0x8cb784B156c304291cE896AF7881F627BB4633BE</span> — import that account's private key
+        into MetaMask as Account&nbsp;A. Any other wallet is refused at the door.
+      </li>
+      <li>
+        <strong>Have a PDF ready</strong> to issue as the certificate. Any PDF works. Under 10&nbsp;MB.
+      </li>
+    </ol>
+
+    <div class="warn">
+      <span class="label">If you skip step 4</span>
+      <p>
+        The institution portal will connect, check the chain, and then refuse with
+        <em>"This wallet is not authorised as an issuer."</em> That is the app working correctly, not a bug — but it
+        will stop your recording dead.
+      </p>
+    </div>
+
+    <div class="page-break"></div>
+
+    <h2>Part 1 — Verify something, with nothing</h2>
+    <p>
+      Start here. It needs no wallet and no setup, and it is the clearest demonstration of the point: anyone,
+      anywhere, can check a credential without asking permission from anybody.
+    </p>
+
+    <ol class="steps">
+      <li>Open the app and click <strong>Verify</strong> in the top navigation.</li>
+      <li>Choose the <strong>Enter manually</strong> tab.</li>
+      <li>
+        Paste this holder address:<br />
+        <span class="chip">0x8cb784B156c304291cE896AF7881F627BB4633BE</span>
+      </li>
+      <li>
+        And this document hash:<br />
+        <span class="chip">0xd2a65c9bb7163dcba970c037be4a97d8f98ba37969172e127cdecdb123871e1b</span>
+      </li>
+      <li>Click <strong>Verify</strong>.</li>
+    </ol>
+
+    <div class="box">
+      <span class="label" style="color: #4b5262">What you should see</span>
+      <p>
+        A green <strong>Valid</strong> verdict, issued by <strong>CredVault Demo University</strong>, with the
+        issue date and expiry. The credential body reads <em>"Encrypted — no key supplied"</em>, which is the
+        system working as designed: validity is public, contents are not.
+      </p>
+      <p style="margin-top: 6px">
+        Expand <strong>Proof</strong> to show the document hash, IPFS CID and contract address. Expand
+        <strong>What is actually stored</strong> to show the raw ciphertext IPFS serves — this is the shot worth
+        lingering on, because it proves the encryption is real rather than claimed.
+      </p>
+    </div>
+
+    <h2>Part 2 — The institution issues a credential</h2>
+
+    <ol class="steps">
+      <li>Switch MetaMask to <span class="who who-a">Institution</span> <strong>Account A</strong>.</li>
+      <li>Click <strong>Institutions</strong> in the navigation, then connect. The app checks the issuer role on-chain.</li>
+      <li>On the <strong>Issue</strong> tab, drag your PDF into the dropzone. Its <span class="chip">keccak256</span> hash appears immediately — computed in your browser; the file is never uploaded.</li>
+      <li>Fill in the <strong>holder wallet address</strong> — this must be Account&nbsp;B's address. Copy it from MetaMask.</li>
+      <li>Fill in holder name, type, title, and optionally an expiry and description.</li>
+      <li>Click <strong>Issue credential</strong>.</li>
+    </ol>
+
+    <p>You will be asked to sign <strong>twice</strong>, and they are different things:</p>
+    <table>
+      <tr>
+        <th style="width: 150px">Prompt</th>
+        <th>What it is</th>
+      </tr>
+      <tr>
+        <td>Signature request</td>
+        <td>Derives the encryption key. Free, no gas — it is a signature, not a transaction.</td>
+      </tr>
+      <tr>
+        <td>Transaction</td>
+        <td>Writes the credential to the contract. Costs Sepolia gas.</td>
+      </tr>
+    </table>
+
+    <p>The progress panel walks through the real stages as they happen:</p>
+    <p style="margin-left: 2px">
+      <span class="chip">Hashing document</span> <span class="chip">Sign to derive the encryption key</span>
+      <span class="chip">Encrypting document</span> <span class="chip">Uploading to IPFS</span>
+      <span class="chip">Uploading encrypted metadata</span> <span class="chip">Confirm the transaction</span>
+      <span class="chip">Waiting for confirmation</span>
+    </p>
+
+    <h2>Part 3 — The hand-off (this is the part that confuses people)</h2>
+
+    <p>
+      The moment the transaction confirms, a dialog appears: <strong>"Hand this to the student."</strong> It shows a
+      QR code and a block of text that looks like this:
+    </p>
+    <div class="box mono" style="font-size: 8.6pt; word-break: break-all; background: #f7f8fa">
+      {"holder":"0x…","documentHash":"0x…","k":"…"}
+    </div>
+
+    <p>Three fields, and only the third is secret:</p>
+    <table>
+      <tr><th style="width: 108px">Field</th><th>Meaning</th></tr>
+      <tr><td class="mono">holder</td><td>Which wallet the credential belongs to. Public.</td></tr>
+      <tr><td class="mono">documentHash</td><td>Which credential it is. Public — it is on-chain already.</td></tr>
+      <tr><td class="mono">k</td><td><strong>The decryption key.</strong> Not on-chain, not on IPFS, not on any server. This dialog is the only place it ever appears.</td></tr>
+    </table>
+
+    <div class="warn">
+      <span class="label">Do not close this dialog before copying</span>
+      <p>
+        Click <strong>Copy code</strong> (or <strong>Save QR</strong>) and paste it somewhere you can get at it as
+        the student — a notes app is fine. If you close without copying, the only way to get the key back is to
+        issue the credential again.
+      </p>
+    </div>
+
+    <p>
+      In the real world the institution would email this, print the QR on the certificate, or hand it over in
+      person. For the demo, copying it to a scratch file is fine — and worth saying out loud while recording,
+      because it explains <em>why</em> the key never touches a server.
+    </p>
+
+    <div class="page-break"></div>
+
+    <h2>Part 4 — The student accepts and unlocks</h2>
+
+    <ol class="steps">
+      <li>Switch MetaMask to <span class="who who-b">Student</span> <strong>Account B</strong>.</li>
+      <li>
+        Click <strong>Students</strong> in the navigation and connect. <em>No key is needed to get in</em> — the
+        wallet is the login.
+      </li>
+      <li>
+        The new credential appears under <strong>Awaiting your decision</strong>. Note what you can already see
+        without any key: the issuer, the dates, the status. Only the title and details are hidden.
+      </li>
+      <li>
+        Click <strong>Accept</strong> and confirm the transaction. This is the consent step — nothing lands in a
+        student's name unless they sign for it. The status moves from <em>Pending</em> to <em>Active</em>.
+      </li>
+      <li>
+        Now unlock it. Click <strong>Claim key</strong>, paste the whole claim code from Part 3 — braces
+        included — and click <strong>Save key</strong>.
+      </li>
+      <li>
+        The card changes from <em>"Encrypted credential"</em> to the real title and details. The key is stored in
+        this browser only.
+      </li>
+    </ol>
+
+    <div class="note">
+      <span class="label">Worth demonstrating</span>
+      <p>
+        Try <strong>Decline</strong> on a second issued credential to show the <em>Rejected</em> path, and
+        <strong>Back up keys</strong> to show the passphrase-wrapped export — that is the answer to "what happens
+        when the student changes laptop".
+      </p>
+    </div>
+
+    <h2>Part 5 — The student shares, the employer checks</h2>
+
+    <ol class="steps">
+      <li>On the credential card, click <strong>Share</strong>. You get a QR and a share code — the same shape as before, and it carries the key.</li>
+      <li>Copy it, then open <strong>Verify</strong> (a private window is a nice touch — it proves no logged-in state is involved).</li>
+      <li>Paste the code into the <strong>Paste code</strong> tab and click <strong>Verify</strong>.</li>
+      <li>This time the verdict is <strong>Valid</strong> <em>and</em> the details are decrypted and readable, because the code carried the key.</li>
+      <li>
+        Now prove the document. Under <strong>Prove the document</strong>, drop in the same PDF you issued. You
+        should get a match — the file is byte-for-byte the one that was issued.
+      </li>
+      <li>
+        Then drop in a <strong>different</strong> PDF. The mismatch alarm fires and shows both hashes side by side.
+        <strong>Record this one.</strong> It is the most convincing thirty seconds in the whole demo.
+      </li>
+    </ol>
+
+    <h2>Part 6 — Revoke, and undo the revoke</h2>
+
+    <ol class="steps">
+      <li>Switch back to <span class="who who-a">Institution</span> <strong>Account A</strong> and open the <strong>Issued</strong> tab.</li>
+      <li>Find the credential, click <strong>Revoke</strong>, confirm the dialog, and sign.</li>
+      <li>
+        Re-run the verification from Part 5. The verdict is now <strong>Revoked</strong>, and the credential card
+        is overprinted with <strong>VOID</strong>.
+      </li>
+      <li>Back on the institution's <strong>Issued</strong> tab, click <strong>Reinstate</strong> and sign.</li>
+      <li>Verify once more — it reads <strong>Valid</strong> again.</li>
+    </ol>
+
+    <p>
+      Worth narrating: every one of those state changes is a public, timestamped, attributable event on a chain
+      anyone can read. A central database can change a record with no external trace. That is the actual argument
+      for building it this way, and it is the strongest thing to end on.
+    </p>
+
+    <h2>A recording order that flows</h2>
+    <ul class="check">
+      <li>Verify a credential cold, with no wallet — establishes the premise in 30 seconds</li>
+      <li>Institution issues, showing the live hash and the two signatures</li>
+      <li>The hand-off dialog — pause here and explain the key</li>
+      <li>Student accepts, then pastes the key and watches the card unlock</li>
+      <li>Share to an employer, decrypted this time</li>
+      <li>Drop the wrong PDF, show the mismatch alarm</li>
+      <li>Revoke, re-verify, reinstate</li>
+    </ul>
+
+    <h2>When something goes wrong</h2>
+    <table>
+      <tr><th style="width: 215px">What you see</th><th>Why, and what to do</th></tr>
+      <tr>
+        <td>"This wallet is not authorised as an issuer"</td>
+        <td>Account&nbsp;A is not the registered issuer wallet. See step 4 of the setup.</td>
+      </tr>
+      <tr>
+        <td>Nothing on the student dashboard</td>
+        <td>You issued to the wrong address, or MetaMask is on a different account. Check the address in the nav matches the one you typed as holder.</td>
+      </tr>
+      <tr>
+        <td>"That is not a CredVault claim code"</td>
+        <td>Partial paste. It must include the opening and closing braces.</td>
+      </tr>
+      <tr>
+        <td>"This code carries no key"</td>
+        <td>You pasted a share code made without a key. Use the claim code from the issuance dialog.</td>
+      </tr>
+      <tr>
+        <td>Credential shows but stays encrypted</td>
+        <td>Expected until the key is saved — and keys are per-browser. Claim it again in this browser, or restore a backup.</td>
+      </tr>
+      <tr>
+        <td>Transaction fails or never prompts</td>
+        <td>Out of Sepolia ETH, or on the wrong network. Top up and confirm the network pill reads Sepolia.</td>
+      </tr>
+      <tr>
+        <td>Issuance stalls on "Uploading to IPFS"</td>
+        <td>The pinning service is unreachable or unconfigured. Verification still works; only issuance needs it.</td>
+      </tr>
+      <tr>
+        <td>Verify returns "not found"</td>
+        <td>Holder address and document hash must be an exact pair. A hash issued to a different holder will not resolve.</td>
+      </tr>
+    </table>
+
+    <div class="footer">
+      CredVault · Sepolia <span class="mono">0x26Eb4c3f71ab6735e6c4b5a04D88fa902c46C8B3</span> · MIT licensed
+    </div>
+  </body>
+</html>

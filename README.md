@@ -15,7 +15,7 @@ The student holds the only key that reads it.
 [![Verified](https://img.shields.io/badge/Sourcify-exact_match-2f855a?style=flat-square)](https://repo.sourcify.dev/11155111/0x26Eb4c3f71ab6735e6c4b5a04D88fa902c46C8B3)
 [![License](https://img.shields.io/badge/License-MIT-333?style=flat-square)](LICENSE)
 
-**[Live demo](https://cred-vaulte.vercel.app)**  ·  [Contract on Etherscan](https://sepolia.etherscan.io/address/0x26Eb4c3f71ab6735e6c4b5a04D88fa902c46C8B3)  ·  [Architecture & threat model](Backend-Contracts/README.md)
+**[Live demo](https://cred-vaulte.vercel.app)**  ·  [Try it end to end](docs/CredVault-Testing-Walkthrough.pdf)  ·  [Contract on Etherscan](https://sepolia.etherscan.io/address/0x26Eb4c3f71ab6735e6c4b5a04D88fa902c46C8B3)  ·  [Architecture & threat model](Backend-Contracts/README.md)
 
 </div>
 
@@ -186,6 +186,12 @@ npm run dev
 Copy `.env.example` to `.env.local` if you are pointing at your own deployment. The
 defaults target the live Sepolia contract, so **verification works with no configuration
 at all** — issuance is the only flow that needs a wallet and a pinning endpoint.
+
+To exercise the whole thing — issue, accept, share, verify, revoke, reinstate — follow
+[**CredVault-Testing-Walkthrough.pdf**](docs/CredVault-Testing-Walkthrough.pdf). It sets
+up the two wallets, gives you a credential you can verify with no wallet at all, and
+explains the one part people reliably trip on: the claim code is not a login, it is the
+key that makes a credential *readable*.
 
 ### Tests
 
