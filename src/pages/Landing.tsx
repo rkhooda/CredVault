@@ -312,24 +312,25 @@ function LiveDemo({ sample }: { sample: { holder: string; documentHash: string }
 
 const COMPARISON = [
   {
-    question: "Who can remove your record",
-    centralised: "Whoever runs the platform, at any time, without a trace.",
-    credvault: "Only the institution that issued it, in a transaction anyone can see.",
+    question: "Proving the document was not altered",
+    centralised: "A digital signature already does this, and does it well.",
+    credvault: "The same guarantee, from a hash on a public ledger.",
+    conceded: true,
   },
   {
-    question: "What verification costs a verifier",
-    centralised: "An account, an API key, and the operator staying online.",
-    credvault: "A public RPC call. No account, no key, no permission.",
+    question: "Knowing it is still valid today",
+    centralised: "Needs the operator's revocation list or API to be online, reachable and willing.",
+    credvault: "A public read. Revocation is a transaction, attributable to the issuer who made it.",
   },
   {
-    question: "What a verifier actually learns",
-    centralised: "That a record exists in someone's database.",
-    credvault: "That this exact file, byte for byte, is the one that was issued.",
+    question: "Who can gate access to the record",
+    centralised: "The operator — by policy, outage, account suspension or shutdown.",
+    credvault: "Nobody. The record is readable by anyone for as long as the chain exists.",
   },
   {
-    question: "Who reads the contents",
-    centralised: "The operator, and anyone they grant access to.",
-    credvault: "Only whoever the holder gives the key to. Not even the platform.",
+    question: "What a verifier must have",
+    centralised: "An account, an API key, or standing in the right jurisdiction's PKI.",
+    credvault: "A public RPC endpoint.",
   },
 ];
 
@@ -339,8 +340,9 @@ function Comparison() {
       <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
         <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Why not a central registry</h2>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-          Digital credential lockers already exist. They ask you to trust an operator; the differences are narrow and
-          they matter.
+          Lockers like DigiLocker already issue signed documents, and a signature detects tampering perfectly well. That
+          is not the difference. The difference is what has to still exist, still be online, and still be willing, at
+          the moment someone checks.
         </p>
 
         <div className="mt-10 overflow-hidden rounded-lg border border-border">
@@ -362,14 +364,22 @@ function Comparison() {
                 key={row.question}
                 className="grid gap-px bg-border md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]"
               >
-                <div className="bg-background px-5 py-4 text-sm font-medium">{row.question}</div>
+                <div className="bg-background px-5 py-4 text-sm font-medium">
+                  {row.question}
+                  {/* Marked openly: overstating a draw would undermine the rest. */}
+                  {row.conceded && (
+                    <span className="mt-1 block text-[11px] font-normal uppercase tracking-wider text-muted-foreground">
+                      No advantage
+                    </span>
+                  )}
+                </div>
                 <div className="bg-background px-5 py-4 text-sm text-muted-foreground">
                   <span className="mb-1 block text-[11px] uppercase tracking-wider text-muted-foreground md:hidden">
                     Centralised locker
                   </span>
                   {row.centralised}
                 </div>
-                <div className="bg-background px-5 py-4 text-sm">
+                <div className={`bg-background px-5 py-4 text-sm ${row.conceded ? "text-muted-foreground" : ""}`}>
                   <span className="mb-1 block text-[11px] uppercase tracking-wider text-muted-foreground md:hidden">
                     CredVault
                   </span>
@@ -378,6 +388,26 @@ function Comparison() {
               </div>
             ))}
           </div>
+        </div>
+
+        {/* What this design does not fix. Stated here rather than left to be found. */}
+        <div className="mt-6 rounded-lg border border-border bg-background p-5">
+          <h3 className="text-sm font-semibold">What this does not solve</h3>
+          <ul className="mt-2 space-y-1.5 text-sm leading-relaxed text-muted-foreground">
+            <li>
+              The on-chain record is permanent, but the encrypted contents live on IPFS and stay retrievable only while
+              someone pins them. Today that is a pinning service — a centralised dependency for content, though not for
+              proof.
+            </li>
+            <li>
+              Keys are derived from the issuer's signature, deterministically. Contents are private from the public and
+              from this platform, but never from the institution that issued them.
+            </li>
+            <li>
+              Losing a wallet loses the ability to accept new credentials. There is no operator who can restore it for
+              you — which is the trade being made, not an oversight.
+            </li>
+          </ul>
         </div>
       </div>
     </section>
