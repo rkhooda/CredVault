@@ -20,11 +20,13 @@ export default defineConfig(() => ({
     rollupOptions: {
       output: {
         // ethers is a third of the bundle and changes far less often than the
-        // app does, so it earns its own long-lived cache entry.
-        manualChunks: {
-          ethers: ["ethers"],
-          react: ["react", "react-dom", "react-router-dom"],
-          qr: ["qrcode", "jsqr"],
+        // app does, so it earns its own long-lived cache entry. Written as a
+        // function rather than a map because rolldown only accepts that form.
+        manualChunks(id: string) {
+          if (!id.includes("node_modules")) return;
+          if (/node_modules\/(ethers|@noble|@adraffy)\//.test(id)) return "ethers";
+          if (/node_modules\/(react|react-dom|react-router|react-router-dom|scheduler)\//.test(id)) return "react";
+          if (/node_modules\/(qrcode|jsqr)\//.test(id)) return "qr";
         },
       },
     },
