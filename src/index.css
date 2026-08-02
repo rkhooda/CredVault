@@ -100,7 +100,9 @@
     /* Status ramp — one source of truth for the credential lifecycle. */
     --success: 152 62% 30%;
     --success-foreground: 0 0% 100%;
-    --warning: 32 90% 38%;
+    /* Darker than an amber usually goes: it is used as text for the Expired and
+       Awaiting states, and needs 4.5:1 against paper-white. */
+    --warning: 30 92% 33%;
     --warning-foreground: 0 0% 100%;
     --destructive: 0 72% 45%;
     --destructive-foreground: 0 0% 100%;

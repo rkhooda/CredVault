@@ -13,7 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { useCopy } from "@/hooks/use-copy";
 import { chainName, useWallet, type WalletRole } from "@/hooks/use-wallet";
@@ -206,6 +206,9 @@ export function Navigation() {
             </SheetTrigger>
             <SheetContent side="right" className="w-[min(20rem,85vw)]">
               <SheetTitle className="text-left text-sm font-medium text-muted-foreground">Navigate</SheetTitle>
+              <SheetDescription className="sr-only">
+                Site navigation and the connected wallet.
+              </SheetDescription>
               <nav aria-label="Mobile" className="mt-4 flex flex-col gap-1">
                 {NAV_ITEMS.map((item) => {
                   const active = item.match(location.pathname);
