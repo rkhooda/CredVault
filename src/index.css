@@ -2,126 +2,178 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Web3 Credential Platform Design System - Fintech x Blockchain x EdTech */
+/*
+ * CredVault design system.
+ *
+ * Three type families, self-hosted so the app renders offline and under a
+ * strict CSP:
+ *   Inter Tight    — UI. A precise grotesk that tightens well at display sizes.
+ *   JetBrains Mono — every hash, address, CID, key and block number, without
+ *                    exception. Cryptographic material should look like it.
+ *   Source Serif   — the credential's certificate face only, as a deliberate
+ *                    nod to a printed diploma.
+ */
+
+@font-face {
+  font-family: "Inter Tight";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("./assets/fonts/inter-tight-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Inter Tight";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("./assets/fonts/inter-tight-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("./assets/fonts/jetbrains-mono-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("./assets/fonts/jetbrains-mono-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Source Serif";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("./assets/fonts/source-serif-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
 @layer base {
+  /*
+   * Light is the default: this is a document product, and documents live on
+   * paper-white. Surfaces separate by border contrast and a real neutral ramp,
+   * never by gradient.
+   */
   :root {
-    /* Core background and text - Lighter navy theme */
-    --background: 220 25% 15%;
-    --foreground: 220 8% 92%;
-
-    /* Card system - Lighter navy cards */
-    --card: 220 20% 18%;
-    --card-foreground: 220 8% 92%;
-
-    /* Popover */
-    --popover: 220 20% 18%;
-    --popover-foreground: 220 8% 92%;
-
-    /* Primary - Professional navy blue */
-    --primary: 220 85% 65%;
-    --primary-foreground: 220 15% 8%;
-    --primary-glow: 220 85% 72%;
-
-    /* Secondary - Lighter navy-gray */
-    --secondary: 220 15% 25%;
-    --secondary-foreground: 220 8% 92%;
-
-    /* Muted elements - More visible */
-    --muted: 220 15% 22%;
-    --muted-foreground: 220 8% 70%;
-
-    /* Accent - Complementary blue */
-    --accent: 210 85% 62%;
-    --accent-foreground: 220 15% 8%;
-
-    /* Success and error states */
-    --success: 142 76% 36%;
-    --success-foreground: 220 8% 92%;
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 220 8% 92%;
-
-    /* Borders and inputs - More visible */
-    --border: 220 15% 28%;
-    --input: 220 15% 25%;
-    --ring: 220 85% 65%;
-
-    /* Gradients for Web3 aesthetic - Updated navy theme */
-    --gradient-primary: linear-gradient(135deg, hsl(220 85% 65%), hsl(210 85% 62%));
-    --gradient-secondary: linear-gradient(135deg, hsl(220 15% 25%), hsl(220 20% 18%));
-    --gradient-hero: linear-gradient(135deg, hsl(220 85% 65%), hsl(210 85% 62%), hsl(220 85% 72%));
-    --gradient-card: linear-gradient(145deg, hsl(220 20% 18%), hsl(220 15% 22%));
-
-    /* Shadows with glow effects - Navy themed */
-    --shadow-glow: 0 0 20px hsl(220 85% 65% / 0.3);
-    --shadow-card: 0 4px 20px hsl(220 25% 5% / 0.4);
-    --shadow-elevated: 0 8px 40px hsl(220 25% 5% / 0.5);
-
-    /* Animation variables */
-    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    --transition-bounce: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-
-    --radius: 0.75rem;
-
-    --sidebar-background: 220 15% 25%;
-    --sidebar-foreground: 220 8% 92%;
-    --sidebar-primary: 220 85% 65%;
-    --sidebar-primary-foreground: 220 15% 8%;
-    --sidebar-accent: 220 15% 30%;
-    --sidebar-accent-foreground: 220 8% 92%;
-    --sidebar-border: 220 15% 32%;
-    --sidebar-ring: 220 85% 65%;
-  }
-
-  .light {
-    /* Light mode - Bright milk-white aesthetic */
     --background: 0 0% 100%;
-    --foreground: 220 20% 20%;
+    --foreground: 222 24% 11%;
 
+    /* Raised surface. Equal to the page in light mode — the 1px rule does the work. */
     --card: 0 0% 100%;
-    --card-foreground: 220 20% 20%;
+    --card-foreground: 222 24% 11%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 20% 20%;
+    --popover-foreground: 222 24% 11%;
 
-    --primary: 220 85% 60%;
+    /* Sunken surface: code blocks, table headers, inset panels. */
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 40%;
+
+    /* The single accent. Used for actions and focus, not decoration. */
+    --primary: 221 83% 45%;
     --primary-foreground: 0 0% 100%;
-    --primary-glow: 220 85% 70%;
 
-    --secondary: 220 10% 96%;
-    --secondary-foreground: 220 20% 20%;
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 222 24% 11%;
 
-    --muted: 220 8% 97%;
-    --muted-foreground: 220 10% 45%;
+    --accent: 220 14% 94%;
+    --accent-foreground: 222 24% 11%;
 
-    --accent: 210 85% 58%;
-    --accent-foreground: 0 0% 100%;
-
-    --success: 142 76% 36%;
+    /* Status ramp — one source of truth for the credential lifecycle. */
+    --success: 152 62% 30%;
     --success-foreground: 0 0% 100%;
-    --destructive: 0 84% 60%;
+    --warning: 32 90% 38%;
+    --warning-foreground: 0 0% 100%;
+    --destructive: 0 72% 45%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 13% 91%;
-    --input: 220 8% 97%;
-    --ring: 220 85% 60%;
+    --border: 220 13% 90%;
+    --border-strong: 220 13% 80%;
+    --input: 220 13% 90%;
+    --ring: 221 83% 45%;
 
-    --gradient-primary: linear-gradient(135deg, hsl(220 85% 60%), hsl(210 85% 58%));
-    --gradient-secondary: linear-gradient(135deg, hsl(220 8% 97%), hsl(0 0% 100%));
-    --gradient-hero: linear-gradient(135deg, hsl(220 85% 60%), hsl(210 85% 58%), hsl(220 85% 70%));
-    --gradient-card: linear-gradient(145deg, hsl(0 0% 100%), hsl(220 8% 98%));
+    /* Elevation. Short, tight shadows — precision, not depth theatre. */
+    --shadow-sm: 0 1px 2px 0 hsl(222 24% 11% / 0.05);
+    --shadow-md: 0 2px 4px -1px hsl(222 24% 11% / 0.06), 0 1px 2px -1px hsl(222 24% 11% / 0.04);
+    --shadow-lg: 0 8px 24px -6px hsl(222 24% 11% / 0.12), 0 2px 6px -2px hsl(222 24% 11% / 0.06);
 
-    --shadow-glow: 0 0 20px hsl(220 85% 60% / 0.3);
-    --shadow-card: 0 4px 20px hsl(220 20% 20% / 0.06);
-    --shadow-elevated: 0 8px 40px hsl(220 20% 20% / 0.1);
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 220 20% 20%;
-    --sidebar-primary: 220 85% 60%;
+    --radius: 0.5rem;
+
+    --sidebar-background: 220 14% 98%;
+    --sidebar-foreground: 222 24% 11%;
+    --sidebar-primary: 221 83% 45%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 8% 96%;
-    --sidebar-accent-foreground: 220 20% 20%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 220 85% 60%;
+    --sidebar-accent: 220 14% 94%;
+    --sidebar-accent-foreground: 222 24% 11%;
+    --sidebar-border: 220 13% 90%;
+    --sidebar-ring: 221 83% 45%;
+  }
+
+  /* Dark reads as a precision tool: near-black cool neutrals, no navy wash. */
+  .dark {
+    --background: 222 16% 7%;
+    --foreground: 210 17% 96%;
+
+    --card: 222 15% 10%;
+    --card-foreground: 210 17% 96%;
+
+    --popover: 222 15% 10%;
+    --popover-foreground: 210 17% 96%;
+
+    --muted: 220 13% 14%;
+    --muted-foreground: 218 12% 66%;
+
+    --primary: 213 94% 66%;
+    --primary-foreground: 222 47% 8%;
+
+    --secondary: 220 13% 15%;
+    --secondary-foreground: 210 17% 96%;
+
+    --accent: 220 13% 17%;
+    --accent-foreground: 210 17% 96%;
+
+    --success: 152 58% 50%;
+    --success-foreground: 222 47% 8%;
+    --warning: 38 92% 58%;
+    --warning-foreground: 222 47% 8%;
+    --destructive: 0 78% 63%;
+    --destructive-foreground: 222 47% 8%;
+
+    --border: 220 11% 18%;
+    --border-strong: 220 10% 28%;
+    --input: 220 11% 20%;
+    --ring: 213 94% 66%;
+
+    --shadow-sm: 0 1px 2px 0 hsl(0 0% 0% / 0.4);
+    --shadow-md: 0 2px 4px -1px hsl(0 0% 0% / 0.45), 0 1px 2px -1px hsl(0 0% 0% / 0.3);
+    --shadow-lg: 0 8px 24px -6px hsl(0 0% 0% / 0.6), 0 2px 6px -2px hsl(0 0% 0% / 0.4);
+
+    --sidebar-background: 222 16% 9%;
+    --sidebar-foreground: 210 17% 96%;
+    --sidebar-primary: 213 94% 66%;
+    --sidebar-primary-foreground: 222 47% 8%;
+    --sidebar-accent: 220 13% 15%;
+    --sidebar-accent-foreground: 210 17% 96%;
+    --sidebar-border: 220 11% 18%;
+    --sidebar-ring: 213 94% 66%;
   }
 }
 
@@ -130,184 +182,110 @@
     @apply border-border;
   }
 
-  body {
-    @apply bg-background text-foreground font-sans antialiased;
+  html {
+    -webkit-text-size-adjust: 100%;
   }
 
-  html {
-    scroll-behavior: smooth;
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "ss01";
+  }
+
+  /* Headings carry the identity: tight tracking, no wide-tracked marketing look. */
+  h1,
+  h2,
+  h3 {
+    @apply tracking-tight;
+    text-wrap: balance;
+  }
+
+  /* Tabular figures everywhere numbers are compared — counts, dates, block heights. */
+  .font-mono,
+  code,
+  kbd,
+  samp {
+    font-variant-ligatures: none;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* A visible focus ring on every interactive element, in both themes. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
   }
 }
 
 @layer components {
-  /* Web3 credential card styling */
-  .credential-card {
-    @apply bg-gradient-to-br from-card to-muted/50 border border-border/50 rounded-xl p-6;
-    @apply shadow-card hover:shadow-elevated transition-all duration-300;
-    @apply backdrop-blur-sm relative overflow-hidden;
+  /*
+   * The machine-readable zone along the bottom of a credential card — the
+   * passport reference. Holds the documentHash, which is what actually binds
+   * the record to the document.
+   */
+  .mrz {
+    @apply font-mono text-[10px] leading-none tracking-[0.12em] uppercase;
+    font-variant-ligatures: none;
   }
 
-  .credential-card::before {
-    content: '';
-    @apply absolute inset-0 bg-gradient-to-br from-primary/10 to-accent/5 opacity-0;
-    @apply transition-opacity duration-300;
-    pointer-events: none;
+  /* Fine engraved rule used to separate sections of a certificate face. */
+  .rule-engraved {
+    @apply h-px w-full bg-border;
   }
 
-  .credential-card:hover::before {
-    @apply opacity-100;
-  }
-
-  /* Hero gradient button */
-  .btn-hero {
-    @apply bg-gradient-to-r from-primary via-accent to-primary-glow;
-    @apply text-primary-foreground font-semibold px-8 py-4 rounded-xl;
-    @apply shadow-glow hover:shadow-elevated transition-all duration-300;
-    @apply hover:scale-105 active:scale-95 relative overflow-hidden;
-  }
-
-  /* Verification status badges */
-  .status-verified {
-    @apply bg-success/20 text-success border border-success/30 rounded-full px-3 py-1 text-sm font-medium;
-  }
-
-  .status-pending {
-    @apply bg-accent/20 text-accent border border-accent/30 rounded-full px-3 py-1 text-sm font-medium;
-  }
-
-  .status-revoked {
-    @apply bg-destructive/20 text-destructive border border-destructive/30 rounded-full px-3 py-1 text-sm font-medium;
-  }
-
-  /* Animated background for hero sections */
-  .hero-bg {
-    @apply bg-gradient-to-br from-background via-muted/30 to-background relative;
-  }
-
-  .hero-bg::before {
-    content: '';
-    @apply absolute inset-0 opacity-30;
-    background: radial-gradient(circle at 25% 25%, hsl(220 85% 65% / 0.2) 0%, transparent 50%),
-                radial-gradient(circle at 75% 75%, hsl(210 85% 62% / 0.2) 0%, transparent 50%);
-  }
-
-  /* Smooth transitions for interactive elements */
-  .interactive {
-    @apply transition-all duration-300 hover:scale-[1.02] hover:shadow-elevated;
-  }
-
-  /* Glass morphism effect */
-  .glass {
-    @apply bg-card/80 backdrop-blur-xl border border-border/50;
-  }
-
-  /* Enhanced card hover animations with 3D tilt effect */
-  .hero-card {
-    @apply credential-card relative overflow-hidden cursor-pointer;
-    transform-style: preserve-3d;
-    border-radius: 2rem !important;
-    transition: box-shadow 0.3s ease-out;
-    transform-origin: center center;
-    will-change: transform;
-    backface-visibility: hidden;
-    box-shadow: 
-      0 0 0 1px hsl(220 85% 65% / 0.15),
-      0 8px 32px hsl(220 25% 8% / 0.3),
-      inset 0 1px 0 hsl(220 85% 65% / 0.1);
-    background: 
-      radial-gradient(circle at 20% 20%, hsl(220 85% 65% / 0.04) 0%, transparent 50%),
-      radial-gradient(circle at 80% 80%, hsl(210 85% 62% / 0.04) 0%, transparent 50%),
-      linear-gradient(145deg, hsl(220 20% 18%), hsl(220 15% 22%));
-  }
-
-  /* Grid pattern overlay */
-  .hero-card::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background-image: 
-      linear-gradient(hsl(220 85% 65% / 0.08) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(220 85% 65% / 0.08) 1px, transparent 1px);
-    background-size: 24px 24px;
-    border-radius: 2rem;
-    opacity: 0.5;
-    pointer-events: none;
-    z-index: 1;
-  }
-
-  .hero-card::before {
-    content: '';
-    @apply absolute inset-0 bg-gradient-to-br from-primary/10 via-accent/5 to-primary-glow/10;
-    @apply opacity-0 transition-all duration-700 ease-out;
-    border-radius: 2rem;
-    transform: translateZ(-1px);
-    z-index: 0;
-  }
-
-  .hero-card:hover::before {
-    @apply opacity-100;
-  }
-
-  .hero-card:hover {
-    box-shadow: 
-      0 0 0 1px hsl(220 85% 65% / 0.25),
-      0 0 20px hsl(220 85% 65% / 0.35),
-      0 0 40px hsl(210 85% 62% / 0.25),
-      0 12px 48px hsl(220 25% 8% / 0.5),
-      inset 0 1px 0 hsl(220 85% 65% / 0.2);
-  }
-
-  /* Reset transform when not hovering */
-  .hero-card:not(:hover) {
-    transform: rotateX(0deg) rotateY(0deg) translateZ(0px);
-    transition: transform 0.6s cubic-bezier(0.23, 1, 0.32, 1), box-shadow 0.3s ease-out;
-  }
-
-  .hero-card:hover::after {
-    opacity: 0.7;
+  /* Faint grid, used once on the landing hero to suggest ledger paper. */
+  .grid-paper {
+    background-image: linear-gradient(to right, hsl(var(--border) / 0.6) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--border) / 0.6) 1px, transparent 1px);
+    background-size: 64px 64px;
   }
 }
 
-/* Custom animations */
-@keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
-}
-
-@keyframes glow {
-  0%, 100% { box-shadow: 0 0 20px hsl(220 85% 65% / 0.3); }
-  50% { box-shadow: 0 0 40px hsl(220 85% 65% / 0.6); }
-}
-
-@keyframes sparkle {
-  0%, 100% { 
-    opacity: 0; 
-    transform: scale(0) rotate(0deg);
+/*
+ * Motion. Every animation here has a job: revealing a verification result,
+ * advancing the issuance pipeline, or standing in for content that is loading.
+ * There is no ambient motion in this app.
+ */
+@layer utilities {
+  @keyframes reveal {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
   }
-  50% { 
-    opacity: 1; 
-    transform: scale(1) rotate(180deg);
+
+  .animate-reveal {
+    animation: reveal 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  @keyframes shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  /* Skeleton sheen. Sits on top of a muted block, so it reads as "loading". */
+  .shimmer {
+    @apply relative overflow-hidden;
+  }
+
+  .shimmer::after {
+    content: "";
+    @apply absolute inset-0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(90deg, transparent, hsl(var(--foreground) / 0.06), transparent);
+    animation: shimmer 1.6s infinite;
   }
 }
 
-@keyframes theme-switch {
-  0% { transform: rotate(0deg) scale(1); }
-  50% { transform: rotate(180deg) scale(1.1); }
-  100% { transform: rotate(360deg) scale(1); }
-}
-
-.animate-float {
-  animation: float 6s ease-in-out infinite;
-}
-
-.animate-glow {
-  animation: glow 4s ease-in-out infinite;
-}
-
-.animate-sparkle {
-  animation: sparkle 1.5s ease-in-out infinite;
-}
-
-.animate-theme-switch {
-  animation: theme-switch 0.6s ease-in-out;
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

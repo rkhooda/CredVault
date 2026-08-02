@@ -2,6 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ThemeProvider } from "next-themes";
 import { HashRouter, Routes, Route } from "react-router-dom";
 import { Navigation } from "@/components/Navigation";
 import Landing from "./pages/Landing";
@@ -16,35 +17,34 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <HashRouter>
-        <div className="min-h-screen flex flex-col">
-          <Navigation />
-          <main className="flex-1">
-            <Routes>
-              {/* Main landing page */}
-              <Route path="/" element={<Landing />} />
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+      <TooltipProvider delayDuration={200}>
+        <Toaster />
+        <Sonner />
+        {/* HashRouter, not BrowserRouter: GitHub Pages has no server-side rewrite. */}
+        <HashRouter>
+          <div className="flex min-h-screen flex-col">
+            <Navigation />
+            <main className="flex-1">
+              <Routes>
+                <Route path="/" element={<Landing />} />
 
-              {/* Student Portal Routes */}
-              <Route path="/student-portal" element={<StudentLogin />} />
-              <Route path="/student-dashboard" element={<StudentDashboard />} />
+                <Route path="/student-portal" element={<StudentLogin />} />
+                <Route path="/student-dashboard" element={<StudentDashboard />} />
 
-              {/* Institution Portal Routes */}
-              <Route path="/institution-portal" element={<InstitutionLogin />} />
-              <Route path="/institution-dashboard" element={<InstitutionDashboard />} />
+                <Route path="/institution-portal" element={<InstitutionLogin />} />
+                <Route path="/institution-dashboard" element={<InstitutionDashboard />} />
 
-              {/* Verifier Page */}
-              <Route path="/verify" element={<VerifierPage />} />
+                <Route path="/verify" element={<VerifierPage />} />
 
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </main>
-        </div>
-      </HashRouter>
-    </TooltipProvider>
+                {/* Keep the catch-all last. */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </main>
+          </div>
+        </HashRouter>
+      </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 
