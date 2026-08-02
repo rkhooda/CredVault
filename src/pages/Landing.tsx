@@ -1,200 +1,512 @@
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Shield, Users, Award, ExternalLink, CheckCircle, Lock, Globe } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useRef, useEffect } from "react";
-import heroImage from "@/assets/hero-credentials.jpg";
+import {
+  ArrowRight,
+  Building2,
+  FileCheck2,
+  FileSignature,
+  Loader2,
+  Lock,
+  Search,
+  Wallet,
+} from "lucide-react";
+import { CredentialCard } from "@/components/credential/CredentialCard";
+import { StatusBadge } from "@/components/credential/StatusBadge";
+import { displayStatus } from "@/components/credential/status";
+import { HashDisplay } from "@/components/data/HashDisplay";
+import { CredentialCardSkeleton } from "@/components/feedback/Skeletons";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useChainFacts } from "@/hooks/use-chain-facts";
+import { CHAIN_ID, CONTRACT_ADDRESS, DEPLOYMENT_BLOCK } from "@/lib/contract";
+import { verifyCredential, type CredentialRecord } from "@/lib/credentials";
+import { contractUrl, explorerBlockUrl, formatDate } from "@/utils/format";
 
-export default function Landing() {
-  const cardRef = useRef<HTMLDivElement>(null);
+/* -------------------------------------------------------------------------- */
 
-  useEffect(() => {
-    const card = cardRef.current;
-    if (!card) return;
-
-    let animationId: number;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const rect = card.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      
-      // Convert to percentage positions (0 to 1)
-      const xPercent = x / rect.width;
-      const yPercent = y / rect.height;
-      
-      // Create smoother, more subtle tilt based on cursor proximity to corners
-      // Reduce max tilt to 8 degrees for subtlety
-      const maxTilt = 8;
-      
-      // Calculate tilt based on distance from center, but with smoother curves - REVERSED
-      const rotateY = -(xPercent - 0.5) * maxTilt * 2; // -8 to +8 degrees (reversed)
-      const rotateX = (yPercent - 0.5) * maxTilt * 2; // -8 to +8 degrees (reversed)
-      
-      // Add subtle easing curve for smoother transitions
-      const easeRotateY = rotateY * (1 - Math.abs(rotateY) / (maxTilt * 2) * 0.2);
-      const easeRotateX = rotateX * (1 - Math.abs(rotateX) / (maxTilt * 2) * 0.2);
-      
-      // Use requestAnimationFrame for smoothest performance
-      if (animationId) {
-        cancelAnimationFrame(animationId);
-      }
-      
-      animationId = requestAnimationFrame(() => {
-        card.style.transform = `perspective(1000px) rotateX(${easeRotateX}deg) rotateY(${easeRotateY}deg) translateZ(20px)`;
-      });
-    };
-
-    const handleMouseLeave = () => {
-      if (animationId) {
-        cancelAnimationFrame(animationId);
-      }
-      card.style.transform = 'rotateX(0deg) rotateY(0deg) translateZ(0px)';
-    };
-
-    const handleMouseEnter = () => {
-      // Remove any existing transition when entering for immediate response
-      card.style.transition = 'box-shadow 0.3s ease-out';
-    };
-
-    card.addEventListener('mousemove', handleMouseMove);
-    card.addEventListener('mouseleave', handleMouseLeave);
-    card.addEventListener('mouseenter', handleMouseEnter);
-
-    return () => {
-      card.removeEventListener('mousemove', handleMouseMove);
-      card.removeEventListener('mouseleave', handleMouseLeave);
-      card.removeEventListener('mouseenter', handleMouseEnter);
-      if (animationId) {
-        cancelAnimationFrame(animationId);
-      }
-    };
-  }, []);
-
-  const features = [
-    {
-      icon: Lock,
-      title: "Blockchain Security",
-      description: "Immutable credential storage on the Ethereum blockchain with cryptographic verification."
-    },
-    {
-      icon: Globe,
-      title: "Global Verification",
-      description: "Instant verification anywhere in the world with QR code scanning."
-    },
-    {
-      icon: Award,
-      title: "Institution Trust",
-      description: "Verified issuers with transparent reputation tracking on-chain."
-    }
-  ];
-
-  const stats = [
-    { value: "50K+", label: "Verified Credentials" },
-    { value: "200+", label: "Partner Institutions" },
-    { value: "99.9%", label: "Uptime" },
-    { value: "24/7", label: "Global Access" }
-  ];
-
+function Hero({ record, loading }: { record: CredentialRecord | null; loading: boolean }) {
   return (
-    <div className="min-h-screen">
-      {/* Hero Section */}
-      <section className="hero-bg relative py-20 lg:py-32 overflow-hidden">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <Card ref={cardRef} className="hero-card p-8 lg:p-12 relative z-10 animate-fade-in transition-all duration-500 group" style={{borderRadius: '2rem'}}>
-              <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-accent/5 to-primary-glow/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" style={{borderRadius: '2rem'}}></div>
-              <div className="relative z-10">
-                <h1 className="text-4xl lg:text-6xl font-bold mb-6 bg-gradient-to-r from-foreground via-primary to-accent bg-clip-text text-transparent">
-                  Own your education.
-                  <br />
-                  <span className="text-primary">Verify globally.</span>
-                </h1>
-                <p className="text-lg lg:text-xl text-muted-foreground mb-10 max-w-2xl leading-relaxed">
-                  The first blockchain-powered platform for issuing, storing, and verifying academic credentials. 
-                  Secure, transparent, and accessible anywhere in the world.
-                </p>
+    <section className="relative overflow-hidden border-b border-border">
+      <div className="grid-paper pointer-events-none absolute inset-0 opacity-40" aria-hidden="true" />
+      <div
+        className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-background/60 to-background"
+        aria-hidden="true"
+      />
 
-                {/* Stats */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-                  {stats.map((stat, index) => (
-                    <div key={index} className="text-center group/stat">
-                      <div className="text-2xl lg:text-3xl font-bold text-primary mb-1 group-hover/stat:scale-110 transition-transform duration-300">
-                        {stat.value}
-                      </div>
-                      <div className="text-sm text-muted-foreground">{stat.label}</div>
-                    </div>
+      <div className="relative mx-auto grid max-w-7xl items-center gap-12 px-4 py-20 sm:px-6 lg:grid-cols-[1.05fr_minmax(0,0.95fr)] lg:gap-16 lg:px-8 lg:py-28">
+        <div>
+          <a
+            href={contractUrl()}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
+            Live on Sepolia
+            <span className="font-mono">
+              {CONTRACT_ADDRESS.slice(0, 6)}…{CONTRACT_ADDRESS.slice(-4)}
+            </span>
+          </a>
+
+          <h1 className="mt-6 text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl lg:text-[3.4rem]">
+            Academic records anyone can verify, and no one can quietly rewrite.
+          </h1>
+
+          <p className="mt-6 max-w-xl text-base leading-relaxed text-muted-foreground">
+            An institution issues a credential to a public ledger and binds it to the document by hash. The contents
+            stay encrypted, and the student holds the only key. A verifier can prove the file in their hand is the exact
+            one that was issued — without an account, an API key, or permission from anyone.
+          </p>
+
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <Button asChild size="hero">
+              <Link to="/verify">
+                <Search className="h-4 w-4" aria-hidden="true" />
+                Verify a credential
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="hero">
+              <Link to="/student-portal">
+                <Wallet className="h-4 w-4" aria-hidden="true" />
+                Open your wallet of credentials
+              </Link>
+            </Button>
+          </div>
+        </div>
+
+        {/*
+          A specimen, not a mock: this is the most recent credential actually
+          issued on the contract, fetched without a key. That it reads
+          "Encrypted credential" is the product working, not a placeholder.
+        */}
+        <div className="lg:pl-4">
+          <div className="mb-3 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />
+            Latest credential on this contract
+          </div>
+
+          {loading || !record ? (
+            <CredentialCardSkeleton />
+          ) : (
+            <div className="animate-reveal">
+              <CredentialCard record={record} />
+            </div>
+          )}
+
+          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+            Read live from Sepolia with no key supplied — exactly what any passer-by sees. The issuer, dates and
+            document hash are public; the title and holder are not.
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
+const FLOW = [
+  {
+    icon: FileSignature,
+    party: "Institution",
+    title: "Issues and signs",
+    body: "The registrar hashes the document with keccak256 and writes that hash to the contract. Metadata is encrypted under a key derived from the issuer's own signature.",
+    artefacts: ["keccak256(file) → documentHash", "AES-256-GCM(metadata) → ipfs://CID"],
+  },
+  {
+    icon: Lock,
+    party: "Student",
+    title: "Accepts and holds",
+    body: "Nothing lands in a student's name without their consent — acceptance is a transaction they sign. From then on they hold the key that makes the record readable.",
+    artefacts: ["acceptCredential(documentHash)", "K stays on the holder's device"],
+  },
+  {
+    icon: FileCheck2,
+    party: "Verifier",
+    title: "Checks, without asking",
+    body: "Anyone reads the record straight from Sepolia. Given the key, they see what it says; given the file, they can prove it is byte-for-byte the document that was issued.",
+    artefacts: ["verifyCredential(holder, hash)", "keccak256(their file) == documentHash"],
+  },
+];
+
+function FlowSection() {
+  return (
+    <section className="border-b border-border">
+      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+        <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Three parties, one record</h2>
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+          The chain proves validity. IPFS holds content, encrypted. The key travels only in what the student chooses to
+          share.
+        </p>
+
+        <ol className="mt-10 grid gap-px overflow-hidden rounded-lg border border-border bg-border md:grid-cols-3">
+          {FLOW.map((step, index) => {
+            const Icon = step.icon;
+            return (
+              <li key={step.party} className="flex flex-col bg-background p-6">
+                <div className="flex items-center gap-2.5">
+                  <span className="grid h-8 w-8 place-items-center rounded-md border border-border bg-muted">
+                    <Icon className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                    {String(index + 1).padStart(2, "0")} · {step.party}
+                  </span>
+                </div>
+
+                <h3 className="mt-4 text-base font-semibold">{step.title}</h3>
+                <p className="mt-2 flex-1 text-sm leading-relaxed text-muted-foreground">{step.body}</p>
+
+                <div className="mt-5 space-y-1.5 border-t border-border pt-4">
+                  {step.artefacts.map((artefact) => (
+                    <code key={artefact} className="block break-all font-mono text-[11px] text-muted-foreground">
+                      {artefact}
+                    </code>
                   ))}
                 </div>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
+function LiveDemo({ sample }: { sample: { holder: string; documentHash: string } | null }) {
+  const [holder, setHolder] = useState("");
+  const [hash, setHash] = useState("");
+  const [record, setRecord] = useState<CredentialRecord | null>(null);
+  const [state, setState] = useState<"idle" | "checking" | "missing" | "failed" | "done">("idle");
+
+  const run = async () => {
+    if (!holder.trim() || !hash.trim()) return;
+    setState("checking");
+    setRecord(null);
+    try {
+      const result = await verifyCredential(holder.trim(), hash.trim());
+      if (!result) {
+        setState("missing");
+        return;
+      }
+      setRecord(result);
+      setState("done");
+    } catch {
+      setState("failed");
+    }
+  };
+
+  return (
+    <section className="border-b border-border bg-muted/40">
+      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:gap-16">
+          <div>
+            <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Ask the chain yourself</h2>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              This queries the live contract from your browser over a public RPC. There is no server in the path, no
+              account, and nothing to sign — which is exactly the claim being made.
+            </p>
+            {sample && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-5"
+                onClick={() => {
+                  setHolder(sample.holder);
+                  setHash(sample.documentHash);
+                  setState("idle");
+                  setRecord(null);
+                }}
+              >
+                Fill in a real credential from this contract
+              </Button>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-border bg-card p-5 shadow-sm">
+            <div className="space-y-3">
+              <div>
+                <label htmlFor="demo-holder" className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Holder address
+                </label>
+                <Input
+                  id="demo-holder"
+                  value={holder}
+                  onChange={(event) => setHolder(event.target.value)}
+                  placeholder="0x…"
+                  className="mt-1.5 font-mono text-xs"
+                />
               </div>
-            </Card>
+              <div>
+                <label htmlFor="demo-hash" className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Document hash
+                </label>
+                <Input
+                  id="demo-hash"
+                  value={hash}
+                  onChange={(event) => setHash(event.target.value)}
+                  onKeyDown={(event) => event.key === "Enter" && run()}
+                  placeholder="0x… (64 hex characters)"
+                  className="mt-1.5 font-mono text-xs"
+                />
+              </div>
+              <Button className="w-full" onClick={run} disabled={state === "checking" || !holder.trim() || !hash.trim()}>
+                {state === "checking" ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    Reading Sepolia…
+                  </>
+                ) : (
+                  <>
+                    <Search className="h-4 w-4" aria-hidden="true" />
+                    Read the record
+                  </>
+                )}
+              </Button>
+            </div>
 
-            <div className="relative group animate-float lg:ml-8 xl:ml-12 overflow-hidden rounded-2xl">
-              <img 
-                src={heroImage}
-                alt="Digital credential vault with blockchain security"
-                className="rounded-2xl w-full h-auto transition-all duration-500 hover:shadow-[0_0_30px_rgba(59,130,246,0.6)] hover:border-2 hover:border-blue-400"
-              />
+            {state !== "idle" && state !== "checking" && (
+              <div className="animate-reveal mt-4 rounded-md border border-border bg-muted/60 p-4">
+                {state === "done" && record ? (
+                  <>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <StatusBadge status={displayStatus(record)} size="sm" />
+                      <span className="text-xs text-muted-foreground">Issued {formatDate(record.issuedAt)}</span>
+                    </div>
+                    <dl className="mt-3 space-y-2 text-xs">
+                      <div className="flex flex-wrap gap-x-2">
+                        <dt className="text-muted-foreground">Issuer</dt>
+                        <dd className="font-medium">{record.issuerName}</dd>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-2">
+                        <dt className="text-muted-foreground">Contents</dt>
+                        <dd className="inline-flex items-center gap-1.5 text-muted-foreground">
+                          <Lock className="h-3 w-3" aria-hidden="true" />
+                          Encrypted — no key supplied
+                        </dd>
+                      </div>
+                    </dl>
+                    <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
+                      Validity is public. What the credential says is not — that needs the holder's key.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {state === "missing"
+                      ? "No record exists on-chain for that holder and document hash."
+                      : "No Sepolia endpoint responded. Public RPCs rate-limit; try again in a moment."}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
 
-              <div className="absolute inset-0 bg-gradient-to-tr from-primary/20 to-accent/20 rounded-2xl pointer-events-none hover:from-primary/30 hover:to-accent/30 transition-all duration-500"></div>
-              <div className="absolute inset-0 pointer-events-none before:content-[''] before:absolute before:inset-y-0 before:-left-full before:w-1/3 before:bg-gradient-to-tr before:from-transparent before:via-white/40 before:to-transparent before:transform before:-skew-x-12 group-hover:before:animate-shine"></div>
+/* -------------------------------------------------------------------------- */
+
+const COMPARISON = [
+  {
+    question: "Who can remove your record",
+    centralised: "Whoever runs the platform, at any time, without a trace.",
+    credvault: "Only the institution that issued it, in a transaction anyone can see.",
+  },
+  {
+    question: "What verification costs a verifier",
+    centralised: "An account, an API key, and the operator staying online.",
+    credvault: "A public RPC call. No account, no key, no permission.",
+  },
+  {
+    question: "What a verifier actually learns",
+    centralised: "That a record exists in someone's database.",
+    credvault: "That this exact file, byte for byte, is the one that was issued.",
+  },
+  {
+    question: "Who reads the contents",
+    centralised: "The operator, and anyone they grant access to.",
+    credvault: "Only whoever the holder gives the key to. Not even the platform.",
+  },
+];
+
+function Comparison() {
+  return (
+    <section className="border-b border-border">
+      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+        <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Why not a central registry</h2>
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+          Digital credential lockers already exist. They ask you to trust an operator; the differences are narrow and
+          they matter.
+        </p>
+
+        <div className="mt-10 overflow-hidden rounded-lg border border-border">
+          <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-px bg-border md:grid">
+            <div className="bg-muted px-5 py-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              Question
+            </div>
+            <div className="bg-muted px-5 py-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              Centralised locker
+            </div>
+            <div className="bg-muted px-5 py-3 text-[11px] font-medium uppercase tracking-wider text-foreground">
+              CredVault
             </div>
           </div>
-        </div>
-      </section>
 
-      {/* Features Section */}
-      <section className="py-20 bg-secondary/30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold mb-4">Why Choose CredVault?</h2>
-            <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-              Built on cutting-edge blockchain technology to ensure your credentials are secure, 
-              verifiable, and accessible globally.
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-8">
-            {features.map((feature, index) => {
-              const Icon = feature.icon;
-              return (
-                <Card 
-                  key={index} 
-                  className="credential-card p-8 text-center hover:scale-105 transition-transform duration-300 cursor-pointer"
-                >
-                  <div className="w-16 h-16 bg-gradient-primary rounded-full flex items-center justify-center mx-auto mb-6">
-                    <Icon className="w-8 h-8 text-primary-foreground" />
-                  </div>
-                  <h3 className="text-xl font-semibold mb-4">{feature.title}</h3>
-                  <p className="text-muted-foreground">{feature.description}</p>
-                </Card>
-              );
-            })}
+          <div className="grid gap-px bg-border">
+            {COMPARISON.map((row) => (
+              <div
+                key={row.question}
+                className="grid gap-px bg-border md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]"
+              >
+                <div className="bg-background px-5 py-4 text-sm font-medium">{row.question}</div>
+                <div className="bg-background px-5 py-4 text-sm text-muted-foreground">
+                  <span className="mb-1 block text-[11px] uppercase tracking-wider text-muted-foreground md:hidden">
+                    Centralised locker
+                  </span>
+                  {row.centralised}
+                </div>
+                <div className="bg-background px-5 py-4 text-sm">
+                  <span className="mb-1 block text-[11px] uppercase tracking-wider text-muted-foreground md:hidden">
+                    CredVault
+                  </span>
+                  {row.credvault}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-      </section>
+      </div>
+    </section>
+  );
+}
 
-      {/* CTA Section */}
-      <section className="py-20">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-4xl font-bold mb-6">Ready to Secure Your Credentials?</h2>
-          <p className="text-xl text-muted-foreground mb-8">
-            Join thousands of students and institutions already using blockchain-verified credentials.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button asChild variant="hero" size="hero" className="w-full sm:w-auto">
-              <Link to="/student-portal">Get Started</Link>
-            </Button>
-            <Button asChild variant="outline" size="hero" className="w-full sm:w-auto">
+/* -------------------------------------------------------------------------- */
+
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-background p-5">
+      <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="mt-2 text-sm">{children}</div>
+    </div>
+  );
+}
+
+function OnChainFacts({ facts, loading, error, retry }: ReturnType<typeof useChainFacts>) {
+  const counted = (value: number | undefined) => {
+    if (loading) return <Skeleton className="h-5 w-12" />;
+    if (error || value === undefined)
+      return (
+        <button type="button" onClick={retry} className="text-sm text-muted-foreground underline-offset-2 hover:underline">
+          unavailable — retry
+        </button>
+      );
+    return <span className="text-lg font-semibold tabular-nums">{value}</span>;
+  };
+
+  return (
+    <section className="border-b border-border bg-muted/40">
+      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+        <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">What is actually deployed</h2>
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+          Every figure here is read from the contract when this page loads. Nothing on this site is illustrative.
+        </p>
+
+        <div className="mt-8 grid gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+          <Fact label="Contract">
+            <HashDisplay value={CONTRACT_ADDRESS} href={contractUrl()} label="contract address" lead={8} tail={6} />
+          </Fact>
+          <Fact label="Network">
+            <span className="inline-flex items-center gap-2">
+              Sepolia
+              <code className="font-mono text-xs text-muted-foreground">chainId {CHAIN_ID}</code>
+            </span>
+          </Fact>
+          <Fact label="Deployed at block">
+            <a
+              href={explorerBlockUrl(DEPLOYMENT_BLOCK)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-sm tabular-nums underline-offset-2 hover:underline"
+            >
+              {DEPLOYMENT_BLOCK.toLocaleString()}
+            </a>
+          </Fact>
+          <Fact label="Last issuance at block">
+            {loading ? (
+              <Skeleton className="h-5 w-20" />
+            ) : facts?.latestBlock ? (
               <a
-                href="https://sepolia.etherscan.io/address/0xb93E8364b030877C14c47E262C2e9822A2a364f9"
+                href={explorerBlockUrl(facts.latestBlock)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-2"
+                className="font-mono text-sm tabular-nums underline-offset-2 hover:underline"
               >
-                View on Sepolia Explorer
-                <ExternalLink className="w-4 h-4" />
+                {facts.latestBlock.toLocaleString()}
               </a>
+            ) : (
+              <span className="text-sm text-muted-foreground">—</span>
+            )}
+          </Fact>
+          <Fact label="Credentials issued">{counted(facts?.credentials)}</Fact>
+          <Fact label="Institutions issuing">{counted(facts?.issuers)}</Fact>
+          <Fact label="Document binding">
+            <code className="font-mono text-xs">keccak256</code>
+          </Fact>
+          <Fact label="Metadata at rest">
+            <code className="font-mono text-xs">AES-256-GCM</code>
+          </Fact>
+        </div>
+
+        {error && (
+          <p className="mt-4 text-xs text-muted-foreground">
+            Counts are rebuilt from event logs back to the deployment block. Free endpoints rate-limit that scan, so it
+            occasionally needs a second attempt.
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
+export default function Landing() {
+  // One scan for the whole page: the demo prefill and the fact panel read the
+  // same event history, and it is the most expensive call on the site.
+  const chainFacts = useChainFacts();
+
+  return (
+    <div>
+      <Hero record={chainFacts.facts?.sampleRecord ?? null} loading={chainFacts.loading} />
+      <FlowSection />
+      <LiveDemo sample={chainFacts.facts?.sample ?? null} />
+      <Comparison />
+      <OnChainFacts {...chainFacts} />
+
+      <section>
+        <div className="mx-auto max-w-3xl px-4 py-16 text-center sm:px-6 lg:py-24">
+          <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Issue or hold a credential</h2>
+          <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
+            Students connect the wallet their credentials were issued to. Institutions need a wallet holding ISSUER_ROLE
+            on the contract.
+          </p>
+          <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+            <Button asChild size="hero">
+              <Link to="/institution-portal">
+                <Building2 className="h-4 w-4" aria-hidden="true" />
+                Institution portal
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="hero">
+              <Link to="/student-portal">
+                <Wallet className="h-4 w-4" aria-hidden="true" />
+                Student portal
+              </Link>
             </Button>
           </div>
         </div>
