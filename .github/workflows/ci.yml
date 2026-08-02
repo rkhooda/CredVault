@@ -18,18 +18,8 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Environment
-        run: node --version && npm --version
-
       - name: Install
-        run: |
-          set +e
-          npm ci --no-audit --no-fund 2>&1 | tee /tmp/npm.log
-          code=${PIPESTATUS[0]}
-          if [ "$code" -ne 0 ]; then
-            echo "::error::npm ci failed: $(grep -iE 'npm error|npm ERR' /tmp/npm.log | head -8 | tr '\n' ' | ' | cut -c1-800)"
-          fi
-          exit "$code"
+        run: npm ci --no-audit --no-fund
 
       - name: Typecheck
         run: npm run typecheck
