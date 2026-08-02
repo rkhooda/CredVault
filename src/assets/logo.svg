@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" role="img" aria-label="CredVault">
+  <!--
+    A sealed record: a document with an embossed seal breaking its corner.
+    Drawn in a single colour so it inherits currentColor in either theme; the
+    gap around the seal is a mask knockout rather than a second fill.
+  -->
+  <mask id="cv-seal-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
+    <rect width="32" height="32" fill="#fff" />
+    <circle cx="21.5" cy="22.5" r="7.75" fill="#000" />
+  </mask>
+  <g mask="url(#cv-seal-gap)">
+    <path
+      d="M6.25 5.5A1.5 1.5 0 0 1 7.75 4h9.19a1.5 1.5 0 0 1 1.06.44l6.31 6.31a1.5 1.5 0 0 1 .44 1.06V26a1.5 1.5 0 0 1-1.5 1.5H7.75A1.5 1.5 0 0 1 6.25 26z"
+      stroke="currentColor"
+      stroke-width="2"
+    />
+    <path d="M17 4.5v6.25a1.5 1.5 0 0 0 1.5 1.5h6.25" stroke="currentColor" stroke-width="2" />
+    <path d="M10.5 15.5h6M10.5 19.5h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+  </g>
+  <circle cx="21.5" cy="22.5" r="5.5" fill="currentColor" />
+</svg>
