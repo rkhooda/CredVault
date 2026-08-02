@@ -10,8 +10,7 @@ import StudentDashboard from "./pages/StudentDashboard";
 import InstitutionDashboard from "./pages/InstitutionDashboard";
 import VerifierPage from "./pages/VerifierPage";
 import NotFound from "./pages/NotFound";
-import StudentLogin from "./pages/StudentLogin";
-import InstitutionLogin from "./pages/InstitutionLogin";
+import PortalConnect from "./pages/PortalConnect";
 
 const queryClient = new QueryClient();
 
@@ -29,10 +28,10 @@ const App = () => (
               <Routes>
                 <Route path="/" element={<Landing />} />
 
-                <Route path="/student-portal" element={<StudentLogin />} />
+                <Route path="/student-portal" element={<PortalConnect role="student" />} />
                 <Route path="/student-dashboard" element={<StudentDashboard />} />
 
-                <Route path="/institution-portal" element={<InstitutionLogin />} />
+                <Route path="/institution-portal" element={<PortalConnect role="institution" />} />
                 <Route path="/institution-dashboard" element={<InstitutionDashboard />} />
 
                 <Route path="/verify" element={<VerifierPage />} />
