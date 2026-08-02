@@ -1,143 +1,105 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import QRCode from "qrcode";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { ethers } from "ethers";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import {
-  Search,
+  Ban,
+  Check,
   Download,
   ExternalLink,
-  CheckCircle,
-  Clock,
-  XCircle,
-  QrCode,
-  Wallet,
-  Copy,
+  FileSearch,
+  Info,
   KeyRound,
-  Check,
-  Ban,
-  Upload,
+  Loader2,
+  QrCode,
+  Search,
+  Wallet,
 } from "lucide-react";
+import { CredentialCard } from "@/components/credential/CredentialCard";
+import { STATUS_FILTERS, displayStatus, type DisplayStatus } from "@/components/credential/status";
+import { AddressChip } from "@/components/data/AddressChip";
+import { HashDisplay } from "@/components/data/HashDisplay";
+import { CiphertextProof, ProofPanel, ProofRow } from "@/components/data/ProofPanel";
+import { CredentialCardSkeletonGrid } from "@/components/feedback/Skeletons";
+import { EmptyState, ErrorState } from "@/components/feedback/States";
+import { ClaimKeyDialog } from "@/components/student/ClaimKeyDialog";
+import { KeyBackupDialog } from "@/components/student/KeyBackupDialog";
+import { ShareDialog } from "@/components/student/ShareDialog";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { getContract, ensureSepolia, getInjectedProvider } from "@/lib/contract";
-import {
-  fetchCredentialsForHolder,
-  CredentialStatus,
-  encodeSharePayload,
-  decodeSharePayload,
-  type CredentialRecord,
-} from "@/lib/credentials";
-import { describeError } from "@/lib/issuance";
-import { saveKey, loadKey, allKeys, mergeKeys } from "@/lib/keyVault";
-import { exportKeyBackup, importKeyBackup, importKey, decryptBytes, type EncryptedPayload } from "@/lib/crypto";
+import { useWallet } from "@/hooks/use-wallet";
+import { ensureSepolia, getContract, getInjectedProvider } from "@/lib/contract";
+import { CredentialStatus, fetchCredentialsForHolder, type CredentialRecord } from "@/lib/credentials";
+import { decryptBytes, importKey, type EncryptedPayload } from "@/lib/crypto";
 import { fetchJson } from "@/lib/ipfs";
+import { describeError } from "@/lib/issuance";
+import { loadKey } from "@/lib/keyVault";
+import { contractUrl, explorerTxUrl, formatDate, ipfsUrl } from "@/utils/format";
 
 export default function StudentDashboard() {
   const { toast } = useToast();
-  const backupInputRef = useRef<HTMLInputElement>(null);
+  const { address } = useWallet("student");
 
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filter, setFilter] = useState("all");
-  const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<CredentialRecord[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [busyHash, setBusyHash] = useState<string | null>(null);
 
-  const [qrCredential, setQrCredential] = useState<CredentialRecord | null>(null);
-  const [qrDataUrl, setQrDataUrl] = useState("");
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<DisplayStatus | "all">("all");
 
-  const [claimInput, setClaimInput] = useState("");
+  const [sharing, setSharing] = useState<CredentialRecord | null>(null);
+  const [details, setDetails] = useState<CredentialRecord | null>(null);
   const [claimOpen, setClaimOpen] = useState(false);
+  const [backupOpen, setBackupOpen] = useState(false);
 
-  useEffect(() => {
-    const address = localStorage.getItem("credvault_student_wallet");
-    if (address) setWalletAddress(address);
-  }, []);
-
-  const fetchCredentials = useCallback(async (address: string) => {
+  const load = useCallback(async (holder: string) => {
     setLoading(true);
     setFetchError(null);
     try {
-      setCredentials(await fetchCredentialsForHolder(address));
+      setCredentials(await fetchCredentialsForHolder(holder));
     } catch (err) {
       console.error("Failed to fetch credentials:", err);
-      setFetchError("Could not load credentials from chain. Check your connection and try again.");
+      setFetchError(describeError(err));
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (walletAddress) fetchCredentials(walletAddress);
-  }, [walletAddress, fetchCredentials]);
+    if (address) load(address);
+    else setLoading(false);
+  }, [address, load]);
 
-  // The share QR carries the decryption key, so a verifier can read the
-  // credential without the contents ever being public.
-  useEffect(() => {
-    if (!qrCredential) {
-      setQrDataUrl("");
-      return;
-    }
-    const payload = encodeSharePayload({
-      holder: qrCredential.holder,
-      documentHash: qrCredential.documentHash,
-      k: loadKey(qrCredential.documentHash) ?? undefined,
-    });
-    QRCode.toDataURL(payload, { width: 240, margin: 1 }).then(setQrDataUrl).catch(console.error);
-  }, [qrCredential]);
+  const refresh = useCallback(() => {
+    if (address) load(address);
+  }, [address, load]);
 
-  const stats = useMemo(
-    () => ({
-      total: credentials.length,
-      active: credentials.filter((c) => c.isValid).length,
-      pending: credentials.filter((c) => c.status === CredentialStatus.Pending).length,
-    }),
+  const awaiting = useMemo(
+    () => credentials.filter((c) => c.status === CredentialStatus.Pending),
     [credentials],
   );
 
-  const getStatusBadge = (record: CredentialRecord) => {
-    if (record.isExpired && record.status === CredentialStatus.Active) {
-      return <Badge className="status-pending"><Clock className="w-3 h-3 mr-1" />Expired</Badge>;
-    }
-    switch (record.status) {
-      case CredentialStatus.Active:
-        return <Badge className="status-verified"><CheckCircle className="w-3 h-3 mr-1" />Verified</Badge>;
-      case CredentialStatus.Pending:
-        return <Badge className="status-pending"><Clock className="w-3 h-3 mr-1" />Awaiting you</Badge>;
-      case CredentialStatus.Rejected:
-        return <Badge className="status-revoked"><XCircle className="w-3 h-3 mr-1" />Declined</Badge>;
-      case CredentialStatus.Revoked:
-        return <Badge className="status-revoked"><XCircle className="w-3 h-3 mr-1" />Revoked</Badge>;
-      default:
-        return null;
-    }
-  };
+  const settled = useMemo(
+    () => credentials.filter((c) => c.status !== CredentialStatus.Pending),
+    [credentials],
+  );
 
-  const filteredCredentials = credentials.filter((credential) => {
-    const haystack = `${credential.metadata?.title ?? ""} ${credential.issuerName} ${credential.metadata?.type ?? ""}`
-      .toLowerCase();
-    const matchesSearch = searchTerm === "" || haystack.includes(searchTerm.toLowerCase());
+  const visible = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return settled.filter((credential) => {
+      const haystack = `${credential.metadata?.title ?? ""} ${credential.issuerName} ${
+        credential.metadata?.type ?? ""
+      } ${credential.documentHash}`.toLowerCase();
+      const matchesSearch = needle === "" || haystack.includes(needle);
+      const matchesFilter = filter === "all" || displayStatus(credential) === filter;
+      return matchesSearch && matchesFilter;
+    });
+  }, [settled, search, filter]);
 
-    const matchesFilter =
-      filter === "all" ||
-      (filter === "verified" && credential.isValid) ||
-      (filter === "pending" && credential.status === CredentialStatus.Pending) ||
-      (filter === "revoked" && credential.status === CredentialStatus.Revoked);
-
-    return matchesSearch && matchesFilter;
-  });
-
-  // --- On-chain consent ---
+  /* ------------------------------------------------------------- consent */
 
   const respond = async (credential: CredentialRecord, accept: boolean) => {
     setBusyHash(credential.documentHash);
@@ -158,9 +120,9 @@ export default function StudentDashboard() {
 
       toast({
         title: accept ? "Credential accepted" : "Credential declined",
-        description: "Recorded on-chain.",
+        description: "Your decision is recorded on-chain.",
       });
-      if (walletAddress) fetchCredentials(walletAddress);
+      refresh();
     } catch (err) {
       console.error("Consent action failed:", err);
       toast({ title: "Action failed", description: describeError(err), variant: "destructive" });
@@ -169,72 +131,15 @@ export default function StudentDashboard() {
     }
   };
 
-  // --- Claiming the decryption key ---
+  /* ------------------------------------------------------------ document */
 
-  const handleClaim = async () => {
-    const payload = decodeSharePayload(claimInput.trim());
-    if (!payload?.k) {
-      toast({
-        title: "Invalid claim code",
-        description: "Paste the full code your institution gave you.",
-        variant: "destructive",
-      });
-      return;
-    }
-    saveKey(payload.documentHash, payload.k);
-    setClaimInput("");
-    setClaimOpen(false);
-    toast({ title: "Key saved", description: "Your credential is now readable on this device." });
-    if (walletAddress) fetchCredentials(walletAddress);
-  };
-
-  // --- Key backup ---
-
-  const handleExportBackup = async () => {
-    const keys = allKeys();
-    if (Object.keys(keys).length === 0) {
-      toast({ title: "Nothing to back up", description: "No credential keys stored yet.", variant: "destructive" });
-      return;
-    }
-    const passphrase = window.prompt("Choose a passphrase to protect the backup:");
-    if (!passphrase) return;
-
-    const blob = new Blob([await exportKeyBackup(keys, passphrase)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "credvault-keys.json";
-    link.click();
-    URL.revokeObjectURL(url);
-    toast({ title: "Backup downloaded", description: "Keep it somewhere safe." });
-  };
-
-  const handleImportBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-
-    const passphrase = window.prompt("Passphrase for this backup:");
-    if (!passphrase) return;
-
-    try {
-      const added = mergeKeys(await importKeyBackup(await file.text(), passphrase));
-      toast({ title: "Backup restored", description: `${added} new key${added === 1 ? "" : "s"} added.` });
-      if (walletAddress) fetchCredentials(walletAddress);
-    } catch {
-      toast({ title: "Could not restore", description: "Wrong passphrase or corrupted file.", variant: "destructive" });
-    }
-  };
-
-  // --- Document download ---
-
-  const handleDownload = async (credential: CredentialRecord) => {
+  const download = async (credential: CredentialRecord) => {
     const cid = credential.metadata?.documentCid;
-    const exportedKey = loadKey(credential.documentHash);
-    if (!cid || !exportedKey) {
+    const key = loadKey(credential.documentHash);
+    if (!cid || !key) {
       toast({
         title: "No document available",
-        description: "This credential has no attached file, or its key is missing.",
+        description: "This credential has no attached file, or its key is not on this device.",
         variant: "destructive",
       });
       return;
@@ -243,343 +148,297 @@ export default function StudentDashboard() {
     setBusyHash(credential.documentHash);
     try {
       const encrypted = await fetchJson<EncryptedPayload>(cid);
-      const bytes = await decryptBytes(encrypted, await importKey(exportedKey));
-      const blob = new Blob([bytes as BlobPart]);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
+      const bytes = await decryptBytes(encrypted, await importKey(key));
+      const url = URL.createObjectURL(new Blob([bytes as BlobPart]));
+      const link = window.document.createElement("a");
       link.href = url;
       link.download = credential.metadata?.documentName ?? "credential";
       link.click();
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error("Download failed:", err);
-      toast({ title: "Download failed", description: "Could not fetch or decrypt the document.", variant: "destructive" });
+      toast({
+        title: "Download failed",
+        description: "Could not fetch the file from IPFS or decrypt it.",
+        variant: "destructive",
+      });
     } finally {
       setBusyHash(null);
     }
   };
 
-  const copyShare = (credential: CredentialRecord) => {
-    const payload = encodeSharePayload({
-      holder: credential.holder,
-      documentHash: credential.documentHash,
-      k: loadKey(credential.documentHash) ?? undefined,
-    });
-    navigator.clipboard.writeText(payload).then(
-      () => toast({ title: "Copied", description: "Share this with a verifier." }),
-      () => toast({ title: "Share data", description: payload }),
+  /* -------------------------------------------------------------- render */
+
+  if (!address) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-20 sm:px-6">
+        <EmptyState
+          icon={Wallet}
+          title="No wallet connected"
+          description="Connect the wallet your credentials were issued to. Everything issued to that address appears here, whether or not you have accepted it yet."
+          action={
+            <Button asChild>
+              <Link to="/student-portal">Go to the student portal</Link>
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
+  const cardActions = (credential: CredentialRecord) => {
+    const busy = busyHash === credential.documentHash;
+    return (
+      <>
+        <Button variant="outline" size="sm" onClick={() => setSharing(credential)}>
+          <QrCode className="h-4 w-4" aria-hidden="true" />
+          Share
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={busy || !credential.metadata?.documentCid}
+          onClick={() => download(credential)}
+          title={credential.metadata?.documentCid ? "Download the original document" : "No document attached"}
+        >
+          {busy ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <Download className="h-4 w-4" aria-hidden="true" />
+          )}
+          Document
+        </Button>
+        <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setDetails(credential)}>
+          <Info className="h-4 w-4" aria-hidden="true" />
+          Details
+        </Button>
+      </>
     );
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2">My Credentials</h1>
-          <p className="text-muted-foreground">Manage and verify your blockchain-secured academic credentials</p>
-        </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card className="credential-card p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Credentials</p>
-                <p className="text-2xl font-bold">{stats.total}</p>
-              </div>
-              <div className="w-12 h-12 bg-primary/20 rounded-full flex items-center justify-center">
-                <CheckCircle className="w-6 h-6 text-primary" />
-              </div>
-            </div>
-          </Card>
-
-          <Card className="credential-card p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Verified</p>
-                <p className="text-2xl font-bold text-success">{stats.active}</p>
-              </div>
-              <div className="w-12 h-12 bg-success/20 rounded-full flex items-center justify-center">
-                <CheckCircle className="w-6 h-6 text-success" />
-              </div>
-            </div>
-          </Card>
-
-          <Card className="credential-card p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Awaiting You</p>
-                <p className="text-2xl font-bold text-accent">{stats.pending}</p>
-              </div>
-              <div className="w-12 h-12 bg-accent/20 rounded-full flex items-center justify-center">
-                <Clock className="w-6 h-6 text-accent" />
-              </div>
-            </div>
-          </Card>
-
-          <Card className="credential-card p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Wallet</p>
-                <p className="text-sm font-mono">
-                  {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : "Not Connected"}
-                </p>
-              </div>
-              <div className="w-12 h-12 bg-primary-glow/20 rounded-full flex items-center justify-center">
-                <Wallet className="w-6 h-6 text-primary-glow" />
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        {/* Actions */}
-        <div className="flex flex-col gap-4 mb-8">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search credentials by title or issuer..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 h-11"
-              />
-            </div>
-            <div className="flex gap-4 flex-wrap">
-              <select
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                className="min-w-[140px] px-4 py-2 h-11 border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              >
-                <option value="all">All Status</option>
-                <option value="verified">Verified</option>
-                <option value="pending">Awaiting you</option>
-                <option value="revoked">Revoked</option>
-              </select>
-
-              <Button variant="outline" className="h-11" onClick={() => setClaimOpen(true)}>
-                <KeyRound className="w-4 h-4 mr-2" />
-                Claim key
-              </Button>
-
-              <input
-                ref={backupInputRef}
-                type="file"
-                accept="application/json"
-                className="hidden"
-                onChange={handleImportBackup}
-              />
-              <Button variant="outline" className="h-11" onClick={handleExportBackup}>
-                <Download className="w-4 h-4 mr-2" />
-                Back up keys
-              </Button>
-              <Button variant="outline" className="h-11" onClick={() => backupInputRef.current?.click()}>
-                <Upload className="w-4 h-4 mr-2" />
-                Restore
-              </Button>
-            </div>
+    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Your credentials</h1>
+          <div className="mt-1.5">
+            <AddressChip address={address} size="sm" />
           </div>
         </div>
 
-        {loading && (
-          <div className="text-center py-12">
-            <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-              <Clock className="w-8 h-8 text-muted-foreground" />
-            </div>
-            <p className="text-muted-foreground">Loading credentials from chain…</p>
-          </div>
-        )}
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => setClaimOpen(true)}>
+            <KeyRound className="h-4 w-4" aria-hidden="true" />
+            Claim a key
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setBackupOpen(true)}>
+            <Download className="h-4 w-4" aria-hidden="true" />
+            Back up keys
+          </Button>
+        </div>
+      </header>
 
-        {!loading && !fetchError && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-            {filteredCredentials.map((credential) => {
+      {/* The consent moment: only the holder can accept, and it needs deciding. */}
+      {!loading && awaiting.length > 0 && (
+        <section className="mt-8" aria-labelledby="awaiting-heading">
+          <div className="flex items-center gap-2">
+            <h2 id="awaiting-heading" className="text-sm font-semibold">
+              Awaiting your decision
+            </h2>
+            <span className="rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-[11px] font-medium text-warning">
+              {awaiting.length}
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            An institution has issued these to you. Nothing is recorded in your name until you accept — and declining is
+            equally final, so read them first.
+          </p>
+
+          <div className="mt-4 grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+            {awaiting.map((credential) => {
               const busy = busyHash === credential.documentHash;
-              const locked = credential.metadata === null;
-
               return (
-                <Card
+                <CredentialCard
                   key={credential.documentHash}
-                  className="credential-card p-6 hover:scale-105 transition-all duration-300"
-                >
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-lg mb-1">
-                        {credential.metadata?.title ?? "Locked credential"}
-                      </h3>
-                      <p className="text-muted-foreground text-sm truncate">{credential.issuerName}</p>
-                    </div>
-                    {getStatusBadge(credential)}
-                  </div>
-
-                  {locked && (
-                    <p className="text-xs text-muted-foreground mb-4">
-                      Encrypted. Use “Claim key” with the code from your institution to read it.
-                    </p>
-                  )}
-
-                  <div className="space-y-2 mb-6">
-                    {credential.metadata?.type && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Type:</span>
-                        <span>{credential.metadata.type}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Issued:</span>
-                      <span>{credential.issuedAt.toLocaleDateString()}</span>
-                    </div>
-                    {credential.expiresAt && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Expires:</span>
-                        <span>{credential.expiresAt.toLocaleDateString()}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {credential.status === CredentialStatus.Pending ? (
-                    <div className="flex gap-2">
-                      <Button
-                        variant="hero"
-                        size="sm"
-                        className="flex-1"
-                        disabled={busy}
-                        onClick={() => respond(credential, true)}
-                      >
-                        <Check className="w-4 h-4 mr-2" />
-                        {busy ? "Working…" : "Accept"}
+                  record={credential}
+                  highlight
+                  actions={
+                    <>
+                      <Button size="sm" disabled={busy} onClick={() => respond(credential, true)}>
+                        {busy ? (
+                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Check className="h-4 w-4" aria-hidden="true" />
+                        )}
+                        Accept
                       </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1"
-                        disabled={busy}
-                        onClick={() => respond(credential, false)}
-                      >
-                        <Ban className="w-4 h-4 mr-2" />
+                      <Button variant="outline" size="sm" disabled={busy} onClick={() => respond(credential, false)}>
+                        <Ban className="h-4 w-4" aria-hidden="true" />
                         Decline
                       </Button>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 min-w-0"
-                        onClick={() => setQrCredential(credential)}
-                      >
-                        <QrCode className="w-4 h-4 mr-2" />
-                        Share
+                      <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setDetails(credential)}>
+                        <Info className="h-4 w-4" aria-hidden="true" />
+                        Details
                       </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 min-w-0"
-                        disabled={busy || !credential.metadata?.documentCid}
-                        onClick={() => handleDownload(credential)}
-                      >
-                        <Download className="w-4 h-4 mr-2" />
-                        Download
-                      </Button>
-                      {credential.transactionHash && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="sm:flex-none"
-                          onClick={() =>
-                            window.open(`https://sepolia.etherscan.io/tx/${credential.transactionHash}`, "_blank")
-                          }
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                </Card>
+                    </>
+                  }
+                />
               );
             })}
           </div>
-        )}
+        </section>
+      )}
 
-        {!loading && fetchError && (
-          <div className="text-center py-12">
-            <div className="w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center mx-auto mb-4">
-              <XCircle className="w-8 h-8 text-destructive" />
-            </div>
-            <h3 className="text-lg font-semibold mb-2">Failed to load credentials</h3>
-            <p className="text-muted-foreground mb-4">{fetchError}</p>
-            <Button variant="outline" onClick={() => walletAddress && fetchCredentials(walletAddress)}>
-              Retry
-            </Button>
-          </div>
-        )}
-
-        {!loading && !fetchError && filteredCredentials.length === 0 && (
-          <div className="text-center py-12">
-            <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
-              <Search className="w-8 h-8 text-muted-foreground" />
-            </div>
-            <h3 className="text-lg font-semibold mb-2">No credentials found</h3>
-            <p className="text-muted-foreground">
-              {searchTerm || filter !== "all"
-                ? "Try adjusting your search or filters."
-                : "No credentials have been issued to this wallet yet."}
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* Share dialog */}
-      <Dialog open={Boolean(qrCredential)} onOpenChange={(open) => !open && setQrCredential(null)}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{qrCredential?.metadata?.title ?? "Share credential"}</DialogTitle>
-            <DialogDescription>
-              {loadKey(qrCredential?.documentHash ?? "")
-                ? "This code lets a verifier read the credential's details. Only share it with people you want to see them."
-                : "You do not hold the key for this credential, so the verifier will see it is valid but not what it says."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col items-center gap-4 py-2">
-            {qrDataUrl ? (
-              <img src={qrDataUrl} alt="Credential QR code" width={240} height={240} className="rounded-lg" />
-            ) : (
-              <div className="w-60 h-60 bg-muted rounded-lg flex items-center justify-center">
-                <Clock className="w-8 h-8 text-muted-foreground animate-pulse" />
-              </div>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full"
-              onClick={() => qrCredential && copyShare(qrCredential)}
-            >
-              <Copy className="w-4 h-4 mr-2" />
-              Copy share code
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Claim key dialog */}
-      <Dialog open={claimOpen} onOpenChange={setClaimOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Claim a credential key</DialogTitle>
-            <DialogDescription>
-              Paste the claim code your institution gave you. It unlocks the encrypted contents on this device.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Input
-              placeholder='{"holder":"0x…","documentHash":"0x…","k":"…"}'
-              value={claimInput}
-              onChange={(e) => setClaimInput(e.target.value)}
-              className="font-mono text-xs"
+      <section className="mt-8" aria-labelledby="wallet-heading">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <h2 id="wallet-heading" className="sr-only">
+            Your credential wallet
+          </h2>
+          <div className="relative flex-1">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
             />
-            <Button variant="hero" className="w-full" onClick={handleClaim}>
-              <KeyRound className="w-4 h-4 mr-2" />
-              Save key
-            </Button>
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by title, issuer or hash…"
+              className="pl-9"
+              aria-label="Search credentials"
+            />
           </div>
+          <Select value={filter} onValueChange={(value) => setFilter(value as DisplayStatus | "all")}>
+            <SelectTrigger className="sm:w-52" aria-label="Filter by status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_FILTERS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="mt-5">
+          {loading ? (
+            <CredentialCardSkeletonGrid count={3} />
+          ) : fetchError ? (
+            <ErrorState message={fetchError} onRetry={refresh} showRpcNote />
+          ) : visible.length === 0 ? (
+            <EmptyState
+              icon={settled.length === 0 ? FileSearch : Search}
+              title={settled.length === 0 ? "Nothing here yet" : "No credentials match"}
+              description={
+                settled.length === 0
+                  ? "Credentials issued to this wallet appear here. If an institution has given you a claim code, saving its key is what makes a credential readable."
+                  : "Try a different search term or clear the status filter."
+              }
+              action={
+                settled.length === 0 ? (
+                  <Button variant="outline" onClick={() => setClaimOpen(true)}>
+                    <KeyRound className="h-4 w-4" aria-hidden="true" />
+                    Claim a key
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setSearch("");
+                      setFilter("all");
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                )
+              }
+            />
+          ) : (
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+              {visible.map((credential) => (
+                <CredentialCard
+                  key={credential.documentHash}
+                  record={credential}
+                  actions={cardActions(credential)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      <ShareDialog record={sharing} onClose={() => setSharing(null)} />
+      <ClaimKeyDialog open={claimOpen} onOpenChange={setClaimOpen} onClaimed={refresh} />
+      <KeyBackupDialog open={backupOpen} onOpenChange={setBackupOpen} onRestored={refresh} />
+
+      {/* Per-credential evidence */}
+      <Dialog open={Boolean(details)} onOpenChange={(open) => !open && setDetails(null)}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{details?.metadata?.title ?? "Encrypted credential"}</DialogTitle>
+            <DialogDescription>
+              {details?.metadata?.description ??
+                "Everything below is read from Sepolia and IPFS. Nothing is cached by a server."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {details && (
+            <div className="space-y-4">
+              <div className="space-y-3">
+                <ProofRow label="Issuer">
+                  <div className="flex flex-col gap-1">
+                    <span>{details.issuerName}</span>
+                    <AddressChip address={details.issuer} size="sm" />
+                  </div>
+                </ProofRow>
+                <ProofRow label="Holder">
+                  <AddressChip address={details.holder} name={details.metadata?.holderName} size="sm" />
+                </ProofRow>
+                <ProofRow label="Issued">{formatDate(details.issuedAt)}</ProofRow>
+                <ProofRow label="Expires">
+                  {details.expiresAt ? formatDate(details.expiresAt) : "Never"}
+                </ProofRow>
+              </div>
+
+              <ProofPanel title="Technical details" description="hashes, CIDs and the contract" defaultOpen>
+                <ProofRow label="Document hash">
+                  <HashDisplay value={details.documentHash} variant="block" />
+                </ProofRow>
+                {details.metadataURI && (
+                  <ProofRow label="Metadata CID">
+                    <HashDisplay value={details.metadataURI} href={ipfsUrl(details.metadataURI)} variant="block" />
+                  </ProofRow>
+                )}
+                {details.transactionHash && (
+                  <ProofRow label="Issued in tx">
+                    <HashDisplay
+                      value={details.transactionHash}
+                      href={explorerTxUrl(details.transactionHash)}
+                      variant="block"
+                    />
+                  </ProofRow>
+                )}
+                <ProofRow label="Contract">
+                  <a
+                    href={contractUrl()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-2 hover:underline"
+                  >
+                    View on Sepolia Etherscan
+                    <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                  </a>
+                </ProofRow>
+              </ProofPanel>
+
+              {details.metadataURI && (
+                <ProofPanel title="What is actually stored" description="ciphertext vs. decrypted">
+                  <CiphertextProof metadataURI={details.metadataURI} decrypted={details.metadata} />
+                </ProofPanel>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
