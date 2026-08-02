@@ -20,7 +20,8 @@ const App = () => (
       <TooltipProvider delayDuration={200}>
         <Toaster />
         <Sonner />
-        {/* HashRouter, not BrowserRouter: GitHub Pages has no server-side rewrite. */}
+        {/* HashRouter keeps share links and QR payloads self-contained in the
+            fragment, so a scanned credential never reaches a server log. */}
         <HashRouter>
           <div className="flex min-h-screen flex-col">
             <Navigation />
