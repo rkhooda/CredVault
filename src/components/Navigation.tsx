@@ -46,6 +46,10 @@ function NetworkPill({
 }) {
   const base = "items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs";
 
+  // No injected wallet, or its chain is not readable yet: say nothing rather
+  // than accuse the user of being on the wrong network.
+  if (chainId === null) return null;
+
   if (chainId === CHAIN_ID) {
     return (
       <span className={cn(base, "inline-flex border-border bg-muted text-muted-foreground", className)}>

@@ -11,26 +11,16 @@ import { cn } from "@/lib/utils";
  * the same recognition without the noise.
  */
 function patternFor(address: string): boolean[] {
-  // xorshift seeded from the address, as blockies does — cheap and stable.
-  const seed = [0, 0, 0, 0];
-  for (let i = 0; i < address.length; i++) {
-    seed[i % 4] = (seed[i % 4] << 5) - seed[i % 4] + address.charCodeAt(i);
-  }
+  // The address is already uniformly distributed hex, so its own nibbles are a
+  // better bit source than a seeded PRNG — and there is nothing to get subtly
+  // wrong. Fifteen nibbles fill the left three columns; the rest mirrors.
+  const hex = address.replace(/^0x/, "");
 
-  const next = () => {
-    const t = seed[0] ^ (seed[0] << 11);
-    seed[0] = seed[1];
-    seed[1] = seed[2];
-    seed[2] = seed[3];
-    seed[3] = seed[3] ^ (seed[3] >> 19) ^ t ^ (t >> 8);
-    return (seed[3] >>> 0) / 4294967296;
-  };
-
-  // Build the left three columns and mirror them, so every glyph is symmetric.
   const cells: boolean[] = new Array(25).fill(false);
   for (let y = 0; y < 5; y++) {
     for (let x = 0; x < 3; x++) {
-      const on = next() > 0.5;
+      const nibble = parseInt(hex[y * 3 + x] ?? "0", 16);
+      const on = nibble >= 8;
       cells[y * 5 + x] = on;
       cells[y * 5 + (4 - x)] = on;
     }
