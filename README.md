@@ -2,7 +2,6 @@
 
 ### **Secure, Decentralized Credential Management on the Blockchain**
 
-[![Built with Lovable](https://img.shields.io/badge/Built%20with-Lovable-blue?style=flat-square)](https://lovable.dev)
 [![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vitejs.dev/)
 [![React](https://img.shields.io/badge/React-20232A?style=flat-square&logo=react&logoColor=61DAFB)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)

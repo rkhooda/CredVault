@@ -5,3 +5,6 @@ dist/
 # Local agent tooling state
 .claude/
 .vercel
+
+# macOS finder metadata
+.DS_Store
