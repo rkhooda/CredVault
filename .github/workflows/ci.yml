@@ -22,7 +22,14 @@ jobs:
         run: node --version && npm --version
 
       - name: Install
-        run: npm ci --no-audit --no-fund
+        run: |
+          set +e
+          npm ci --no-audit --no-fund 2>&1 | tee /tmp/npm.log
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            echo "::error::npm ci failed: $(grep -iE 'npm error|npm ERR' /tmp/npm.log | head -8 | tr '\n' ' | ' | cut -c1-800)"
+          fi
+          exit "$code"
 
       - name: Typecheck
         run: npm run typecheck
