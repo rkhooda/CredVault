@@ -8,3 +8,6 @@ dist/
 
 # macOS finder metadata
 .DS_Store
+
+# Playwright MCP scratch output
+.playwright-mcp/

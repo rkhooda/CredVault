@@ -1,569 +1,414 @@
-import { useState, useEffect, useRef } from "react";
-import jsQR from "jsqr";
+import { useState } from "react";
+import { ethers } from "ethers";
+import {
+  ClipboardPaste,
+  Database,
+  ExternalLink,
+  FileCheck2,
+  Keyboard,
+  Loader2,
+  Lock,
+  QrCode,
+  RotateCcw,
+  ScanLine,
+  Search,
+} from "lucide-react";
+import { STATUS_META, displayStatus } from "@/components/credential/status";
+import { AddressChip } from "@/components/data/AddressChip";
+import { HashDisplay } from "@/components/data/HashDisplay";
+import { CiphertextProof, ProofPanel, ProofRow } from "@/components/data/ProofPanel";
+import { ErrorState } from "@/components/feedback/States";
+import { DocumentCheck } from "@/components/verify/DocumentCheck";
+import { QrScanner } from "@/components/verify/QrScanner";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import {
-  Search,
-  QrCode,
-  CheckCircle,
-  XCircle,
-  ExternalLink,
-  Shield,
-  AlertTriangle,
-  Calendar,
-  Building,
-  User,
-  FileCheck,
-  Lock,
-} from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { ethers } from "ethers";
-import { CONTRACT_ADDRESS } from "@/lib/contract";
-import {
-  verifyCredential,
-  decodeSharePayload,
-  CredentialStatus,
-  STATUS_LABELS,
-  type CredentialRecord,
-} from "@/lib/credentials";
-import { fileMatchesHash } from "@/lib/documentHash";
+import { CONTRACT_ADDRESS, DEPLOYMENT_BLOCK } from "@/lib/contract";
+import { decodeSharePayload, verifyCredential, type CredentialRecord } from "@/lib/credentials";
+import { contractUrl, explorerBlockUrl, formatDate, ipfsUrl } from "@/utils/format";
 
-type DocumentCheck = "idle" | "checking" | "match" | "mismatch";
+const HOW_IT_WORKS = [
+  {
+    icon: ScanLine,
+    title: "Take the holder's code",
+    body: "A share code or QR carries three things: the holder's address, the document hash, and optionally the key that decrypts the details.",
+  },
+  {
+    icon: Database,
+    title: "Read Sepolia directly",
+    body: "The record is fetched from the contract over a public RPC. No account, no API key, and no request to the issuing institution.",
+  },
+  {
+    icon: FileCheck2,
+    title: "Re-hash the document",
+    body: "Hashing the file you were given and comparing it to the on-chain hash proves it is byte-for-byte the one that was issued.",
+  },
+];
+
+type Phase = "idle" | "verifying" | "done" | "notfound" | "failed";
 
 export default function VerifierPage() {
   const { toast } = useToast();
-  const [holderAddress, setHolderAddress] = useState("");
-  const [documentHash, setDocumentHash] = useState("");
-  const [decryptionKey, setDecryptionKey] = useState<string | undefined>(undefined);
+
+  const [holder, setHolder] = useState("");
+  const [hash, setHash] = useState("");
+  const [pasted, setPasted] = useState("");
+  const [key, setKey] = useState<string | undefined>();
+
   const [record, setRecord] = useState<CredentialRecord | null>(null);
-  const [notFound, setNotFound] = useState(false);
+  const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [isVerifying, setIsVerifying] = useState(false);
 
-  const [documentCheck, setDocumentCheck] = useState<DocumentCheck>("idle");
-  const documentInputRef = useRef<HTMLInputElement>(null);
+  /** Runs against explicit values, since the QR path cannot wait for state. */
+  const run = async (holderValue: string, hashValue: string, keyValue?: string) => {
+    const normalisedHash = hashValue.startsWith("0x") ? hashValue : `0x${hashValue}`;
 
-  const [scanOpen, setScanOpen] = useState(false);
-  const [scanError, setScanError] = useState("");
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rafRef = useRef<number>(0);
-  const streamRef = useRef<MediaStream | null>(null);
-
-  const canVerify = holderAddress.trim() !== "" && documentHash.trim() !== "" && !isVerifying;
-
-  /**
-   * Called from the button and directly from the QR path, which passes fresh
-   * values rather than waiting for state to settle.
-   */
-  const runVerify = async (holder: string, hash: string, key?: string) => {
-    if (!holder || !hash) {
-      toast({
-        title: "Missing Fields",
-        description: "Enter both a holder address and a document hash.",
-        variant: "destructive",
-      });
+    if (!ethers.isAddress(holderValue)) {
+      toast({ title: "Invalid address", description: "That is not a valid Ethereum address.", variant: "destructive" });
       return;
     }
-    if (!ethers.isAddress(holder)) {
-      toast({ title: "Invalid Address", description: "That is not a valid Ethereum address.", variant: "destructive" });
-      return;
-    }
-
-    const normalizedHash = hash.startsWith("0x") ? hash : `0x${hash}`;
-    if (!/^0x[0-9a-fA-F]{64}$/.test(normalizedHash)) {
+    if (!/^0x[0-9a-fA-F]{64}$/.test(normalisedHash)) {
       toast({
-        title: "Invalid Hash",
-        description: "The document hash must be 64 hex characters.",
+        title: "Invalid document hash",
+        description: "A document hash is 64 hexadecimal characters.",
         variant: "destructive",
       });
       return;
     }
 
-    setIsVerifying(true);
+    setPhase("verifying");
     setRecord(null);
-    setNotFound(false);
     setError(null);
-    setDocumentCheck("idle");
 
     try {
-      const result = await verifyCredential(holder, normalizedHash, key);
-
+      const result = await verifyCredential(holderValue, normalisedHash, keyValue);
       if (!result) {
-        setNotFound(true);
-        toast({ title: "Not found", description: "No record exists for this holder and hash.", variant: "destructive" });
+        setPhase("notfound");
         return;
       }
-
       setRecord(result);
-      if (result.isValid) {
-        toast({ title: "Credential verified", description: "Valid and active on-chain." });
-      } else {
-        toast({
-          title: STATUS_LABELS[result.status],
-          description: result.isExpired ? "This credential has expired." : "This credential is not currently valid.",
-          variant: "destructive",
-        });
-      }
+      setPhase("done");
     } catch (err) {
-      console.error("Verification error:", err);
-      setError("Could not reach Sepolia. Check your connection and try again.");
-    } finally {
-      setIsVerifying(false);
+      console.error("Verification failed:", err);
+      setError("No Sepolia endpoint responded. Public RPCs rate-limit; another attempt usually lands on a healthy one.");
+      setPhase("failed");
     }
   };
 
-  const handleVerify = () => runVerify(holderAddress.trim(), documentHash.trim(), decryptionKey);
-
-  /** Recomputes keccak256 over the uploaded file and compares it to the on-chain hash. */
-  const handleDocumentCheck = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file || !record) return;
-
-    setDocumentCheck("checking");
-    try {
-      setDocumentCheck((await fileMatchesHash(file, record.documentHash)) ? "match" : "mismatch");
-    } catch (err) {
-      console.error("Document check failed:", err);
-      setDocumentCheck("mismatch");
-    }
-  };
-
-  // Camera scan loop: start on dialog open, stop on close or successful decode.
-  // getUserMedia requires HTTPS or localhost.
-  useEffect(() => {
-    if (!scanOpen) {
-      cancelAnimationFrame(rafRef.current);
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-      setScanError("");
+  /** Share payloads and QR codes carry the same JSON, so both land here. */
+  const acceptPayload = (raw: string) => {
+    const payload = decodeSharePayload(raw.trim());
+    if (!payload) {
+      toast({
+        title: "Not a CredVault code",
+        description: "Paste the whole share code, including the braces.",
+        variant: "destructive",
+      });
       return;
     }
-
-    let alive = true;
-
-    async function startCamera() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        if (!alive) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        streamRef.current = stream;
-        const video = videoRef.current;
-        if (video) {
-          video.srcObject = stream;
-          await video.play();
-          tick();
-        }
-      } catch (err) {
-        if (!alive) return;
-        setScanError(
-          (err as Error).name === "NotAllowedError"
-            ? "Camera permission denied. Allow camera access and try again."
-            : "Could not start camera. Check your device and try again.",
-        );
-      }
-    }
-
-    function tick() {
-      if (!alive) return;
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      if (!video || !canvas || video.readyState < video.HAVE_ENOUGH_DATA) {
-        rafRef.current = requestAnimationFrame(tick);
-        return;
-      }
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(video, 0, 0);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const code = jsQR(imageData.data, imageData.width, imageData.height);
-
-      if (code) {
-        setScanOpen(false); // triggers cleanup via this effect's return
-        const payload = decodeSharePayload(code.data);
-        if (!payload) {
-          toast({
-            title: "Unrecognized QR code",
-            description: "This is not a CredVault credential.",
-            variant: "destructive",
-          });
-          return;
-        }
-        setHolderAddress(payload.holder);
-        setDocumentHash(payload.documentHash);
-        setDecryptionKey(payload.k);
-        runVerify(payload.holder, payload.documentHash, payload.k);
-        return;
-      }
-      rafRef.current = requestAnimationFrame(tick);
-    }
-
-    startCamera();
-
-    return () => {
-      alive = false;
-      cancelAnimationFrame(rafRef.current);
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scanOpen]);
-
-  const resetVerification = () => {
-    setRecord(null);
-    setNotFound(false);
-    setError(null);
-    setHolderAddress("");
-    setDocumentHash("");
-    setDecryptionKey(undefined);
-    setDocumentCheck("idle");
+    setHolder(payload.holder);
+    setHash(payload.documentHash);
+    setKey(payload.k);
+    run(payload.holder, payload.documentHash, payload.k);
   };
 
-  const showResult = record !== null || notFound || error !== null;
-  const isValid = record?.isValid ?? false;
+  const reset = () => {
+    setHolder("");
+    setHash("");
+    setPasted("");
+    setKey(undefined);
+    setRecord(null);
+    setError(null);
+    setPhase("idle");
+  };
+
+  const verifying = phase === "verifying";
+  const status = record ? displayStatus(record) : "none";
+  const meta = STATUS_META[status];
+  const VerdictIcon = meta.icon;
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="text-center mb-12">
-          <div className="w-20 h-20 bg-gradient-primary rounded-full flex items-center justify-center mx-auto mb-6">
-            <Shield className="w-10 h-10 text-primary-foreground" />
-          </div>
-          <h1 className="text-4xl font-bold mb-4">Credential Verifier</h1>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Instantly verify any blockchain-secured credential. Scan the holder's QR code, or enter their wallet
-            address and the document hash.
-          </p>
-        </div>
+    <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
+      <header>
+        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Verify a credential</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+          Reads the record straight from the contract on Sepolia. You do not need an account, a wallet, or permission
+          from the institution that issued it.
+        </p>
+      </header>
 
-        <Card className="credential-card p-8 mb-8">
-          <div className="space-y-6">
-            <div>
-              <Label htmlFor="holderAddress" className="text-lg font-semibold">
-                Holder Wallet Address
-              </Label>
-              <div className="mt-2">
-                <Input
-                  id="holderAddress"
-                  placeholder="0x..."
-                  value={holderAddress}
-                  onChange={(e) => setHolderAddress(e.target.value)}
-                  className="flex-1 font-mono h-12"
-                  disabled={isVerifying}
-                />
-              </div>
-            </div>
+      {/* Three ways in, given equal weight */}
+      <div className="mt-8 rounded-lg border border-border bg-card p-5 sm:p-6">
+        <Tabs defaultValue="paste">
+          <TabsList className="w-full">
+            <TabsTrigger value="paste" className="flex-1">
+              <ClipboardPaste className="h-4 w-4" aria-hidden="true" />
+              <span className="hidden sm:inline">Paste code</span>
+              <span className="sm:hidden">Paste</span>
+            </TabsTrigger>
+            <TabsTrigger value="scan" className="flex-1">
+              <QrCode className="h-4 w-4" aria-hidden="true" />
+              <span className="hidden sm:inline">Scan QR</span>
+              <span className="sm:hidden">Scan</span>
+            </TabsTrigger>
+            <TabsTrigger value="manual" className="flex-1">
+              <Keyboard className="h-4 w-4" aria-hidden="true" />
+              <span className="hidden sm:inline">Enter manually</span>
+              <span className="sm:hidden">Manual</span>
+            </TabsTrigger>
+          </TabsList>
 
-            <div>
-              <Label htmlFor="documentHash" className="text-lg font-semibold">
-                Document Hash (bytes32)
-              </Label>
-              <div className="mt-2 flex gap-3">
-                <Input
-                  id="documentHash"
-                  placeholder="0x1234...abcd  (64 hex chars)"
-                  value={documentHash}
-                  onChange={(e) => setDocumentHash(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && canVerify) handleVerify();
-                  }}
-                  className="flex-1 font-mono h-12"
-                  disabled={isVerifying}
-                />
-                <Button
-                  onClick={() => setScanOpen(true)}
-                  variant="outline"
-                  size="lg"
-                  className="h-12 px-4"
-                  disabled={isVerifying}
-                >
-                  <QrCode className="w-5 h-5" />
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                Scanning the holder's QR also carries their decryption key, which reveals the credential's details.
-                Without it you can still confirm the credential is valid.
-              </p>
-            </div>
-
-            <div className="flex gap-3">
-              <Button onClick={handleVerify} variant="hero" size="lg" className="flex-1 h-12" disabled={!canVerify}>
-                {isVerifying ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
-                    Verifying on Sepolia...
-                  </>
-                ) : (
-                  <>
-                    <Search className="w-5 h-5 mr-2" />
-                    Verify Credential
-                  </>
-                )}
-              </Button>
-
-              {showResult && (
-                <Button onClick={resetVerification} variant="outline" size="lg" className="h-12">
-                  New Search
-                </Button>
-              )}
-            </div>
-          </div>
-        </Card>
-
-        {showResult && (
-          <Card className={`credential-card p-8 ${isValid ? "border-success" : "border-destructive"}`}>
-            <div className="text-center mb-6">
-              {isValid ? (
-                <div className="w-20 h-20 bg-success/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <CheckCircle className="w-10 h-10 text-success" />
-                </div>
+          <TabsContent value="paste" className="mt-5">
+            <Label htmlFor="payload">Share code</Label>
+            <Textarea
+              id="payload"
+              value={pasted}
+              onChange={(e) => setPasted(e.target.value)}
+              rows={3}
+              placeholder='{"holder":"0x…","documentHash":"0x…","k":"…"}'
+              className="mt-1.5 font-mono text-xs"
+            />
+            <p className="mt-2 text-xs text-muted-foreground">
+              If the code includes a key, the credential's details are decrypted in your browser. Without one you can
+              still confirm it is valid.
+            </p>
+            <Button className="mt-4 w-full" onClick={() => acceptPayload(pasted)} disabled={verifying || !pasted.trim()}>
+              {verifying ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
               ) : (
-                <div className="w-20 h-20 bg-destructive/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <XCircle className="w-10 h-10 text-destructive" />
-                </div>
+                <Search className="h-4 w-4" aria-hidden="true" />
               )}
+              Verify
+            </Button>
+          </TabsContent>
 
-              <h2 className={`text-3xl font-bold mb-2 ${isValid ? "text-success" : "text-destructive"}`}>
-                {isValid ? "Credential Verified" : "Not Valid"}
-              </h2>
+          <TabsContent value="scan" className="mt-5">
+            <QrScanner onDecode={acceptPayload} />
+          </TabsContent>
 
-              <p className="text-muted-foreground">
-                {error
-                  ? error
-                  : notFound
-                    ? "No record exists on-chain for this holder and document hash."
-                    : isValid
-                      ? "This credential is authentic and active on the Sepolia blockchain."
-                      : record?.isExpired
-                        ? `This credential expired on ${record.expiresAt?.toLocaleDateString()}.`
-                        : `Status: ${STATUS_LABELS[record?.status ?? CredentialStatus.None]}.`}
-              </p>
-            </div>
-
-            {record && (
-              <>
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-primary/20 rounded-full flex items-center justify-center shrink-0">
-                        <Shield className="w-5 h-5 text-primary" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm text-muted-foreground">Credential</p>
-                        {record.metadata ? (
-                          <p className="font-semibold">{record.metadata.title}</p>
-                        ) : (
-                          <p className="font-semibold flex items-center gap-2 text-muted-foreground">
-                            <Lock className="w-4 h-4" />
-                            Encrypted — no key provided
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-accent/20 rounded-full flex items-center justify-center shrink-0">
-                        <User className="w-5 h-5 text-accent" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm text-muted-foreground">Holder</p>
-                        <p className="font-semibold font-mono text-sm break-all">
-                          {record.metadata?.holderName ?? record.holder}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-success/20 rounded-full flex items-center justify-center shrink-0">
-                        <Building className="w-5 h-5 text-success" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm text-muted-foreground">Issued by</p>
-                        <p className="font-semibold break-words">{record.issuerName}</p>
-                        <p className="font-mono text-xs text-muted-foreground break-all">{record.issuer}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-primary-glow/20 rounded-full flex items-center justify-center shrink-0">
-                        <Calendar className="w-5 h-5 text-primary-glow" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Date Issued</p>
-                        <p className="font-semibold">{record.issuedAt.toLocaleDateString()}</p>
-                        {record.expiresAt && (
-                          <p className="text-xs text-muted-foreground">
-                            Expires {record.expiresAt.toLocaleDateString()}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {record.metadata?.description && (
-                  <div className="mt-6 p-4 bg-muted/30 rounded-lg">
-                    <p className="text-sm text-muted-foreground mb-1">Details</p>
-                    <p className="text-sm">{record.metadata.description}</p>
-                  </div>
+          <TabsContent value="manual" className="mt-5">
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="holder">Holder wallet address</Label>
+                <Input
+                  id="holder"
+                  value={holder}
+                  onChange={(e) => setHolder(e.target.value)}
+                  placeholder="0x…"
+                  className="mt-1.5 font-mono text-xs"
+                />
+              </div>
+              <div>
+                <Label htmlFor="hash">Document hash</Label>
+                <Input
+                  id="hash"
+                  value={hash}
+                  onChange={(e) => setHash(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && run(holder.trim(), hash.trim(), key)}
+                  placeholder="0x… (64 hex characters)"
+                  className="mt-1.5 font-mono text-xs"
+                />
+              </div>
+              <Button
+                className="w-full"
+                onClick={() => run(holder.trim(), hash.trim(), key)}
+                disabled={verifying || !holder.trim() || !hash.trim()}
+              >
+                {verifying ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Search className="h-4 w-4" aria-hidden="true" />
                 )}
-
-                {/* Document integrity — the point of hashing the file itself */}
-                <div className="mt-6 p-4 bg-muted/30 rounded-lg">
-                  <div className="flex items-start justify-between gap-4 flex-wrap">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold mb-1">Check a document</p>
-                      <p className="text-sm text-muted-foreground">
-                        Upload the certificate you were given. We recompute its hash and compare it to the one recorded
-                        on-chain — proving it is byte-for-byte the document that was issued.
-                      </p>
-                    </div>
-                    <input
-                      ref={documentInputRef}
-                      type="file"
-                      className="hidden"
-                      onChange={handleDocumentCheck}
-                      accept=".pdf,.png,.jpg,.jpeg"
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => documentInputRef.current?.click()}
-                      disabled={documentCheck === "checking"}
-                    >
-                      <FileCheck className="w-4 h-4 mr-2" />
-                      {documentCheck === "checking" ? "Hashing…" : "Select file"}
-                    </Button>
-                  </div>
-
-                  {documentCheck === "match" && (
-                    <div className="mt-4 flex items-center gap-2 text-success">
-                      <CheckCircle className="w-5 h-5" />
-                      <span className="font-semibold">Exact match — this is the issued document.</span>
-                    </div>
-                  )}
-                  {documentCheck === "mismatch" && (
-                    <div className="mt-4 flex items-center gap-2 text-destructive">
-                      <XCircle className="w-5 h-5" />
-                      <span className="font-semibold">
-                        No match — this file differs from the one recorded on-chain.
-                      </span>
-                    </div>
-                  )}
-
-                  <p className="font-mono text-xs text-muted-foreground mt-3 break-all">
-                    On-chain hash: {record.documentHash}
-                  </p>
-                </div>
-
-                <div className="mt-6 p-4 bg-muted/30 rounded-lg">
-                  <div className="flex items-center justify-between gap-4 flex-wrap">
-                    <div className="min-w-0">
-                      <p className="text-sm text-muted-foreground mb-1">Verified against contract</p>
-                      <p className="font-mono text-sm break-all">{CONTRACT_ADDRESS}</p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        window.open(`https://sepolia.etherscan.io/address/${CONTRACT_ADDRESS}`, "_blank")
-                      }
-                    >
-                      <ExternalLink className="w-4 h-4 mr-2" />
-                      View on Etherscan
-                    </Button>
-                  </div>
-                </div>
-              </>
-            )}
-
-            {error && (
-              <div className="mt-6 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
-                <div className="flex items-start space-x-3">
-                  <AlertTriangle className="w-5 h-5 text-destructive mt-0.5" />
-                  <div>
-                    <p className="font-semibold text-destructive mb-1">Verification Error</p>
-                    <p className="text-sm text-destructive/80">{error}</p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </Card>
-        )}
-
-        <div className="mt-12 text-center">
-          <h3 className="text-xl font-semibold mb-4">How Verification Works</h3>
-          <div className="grid md:grid-cols-3 gap-6">
-            <div className="space-y-2">
-              <div className="w-12 h-12 bg-primary/20 rounded-full flex items-center justify-center mx-auto">
-                <QrCode className="w-6 h-6 text-primary" />
-              </div>
-              <p className="font-medium">Scan or Enter</p>
-              <p className="text-sm text-muted-foreground">
-                The holder's QR carries their address, the document hash and a decryption key
-              </p>
+                Verify
+              </Button>
             </div>
-            <div className="space-y-2">
-              <div className="w-12 h-12 bg-accent/20 rounded-full flex items-center justify-center mx-auto">
-                <Shield className="w-6 h-6 text-accent" />
-              </div>
-              <p className="font-medium">Blockchain Check</p>
-              <p className="text-sm text-muted-foreground">
-                Read the record straight from Sepolia — no server involved
-              </p>
-            </div>
-            <div className="space-y-2">
-              <div className="w-12 h-12 bg-success/20 rounded-full flex items-center justify-center mx-auto">
-                <FileCheck className="w-6 h-6 text-success" />
-              </div>
-              <p className="font-medium">Prove the Document</p>
-              <p className="text-sm text-muted-foreground">
-                Re-hash the certificate to confirm it is the exact file that was issued
-              </p>
-            </div>
-          </div>
-        </div>
+          </TabsContent>
+        </Tabs>
       </div>
 
-      <Dialog open={scanOpen} onOpenChange={setScanOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Scan QR Code</DialogTitle>
-            <DialogDescription>
-              Point your camera at a CredVault credential QR code to fill in the form automatically.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col items-center gap-3">
-            {scanError ? (
-              <div className="w-full p-4 bg-destructive/10 border border-destructive/20 rounded-lg text-center">
-                <AlertTriangle className="w-5 h-5 text-destructive mx-auto mb-2" />
-                <p className="text-sm text-destructive">{scanError}</p>
+      {verifying && (
+        <p className="mt-6 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          Reading the contract on Sepolia…
+        </p>
+      )}
+
+      {phase === "failed" && error && (
+        <div className="mt-6">
+          <ErrorState message={error} onRetry={() => run(holder.trim(), hash.trim(), key)} />
+        </div>
+      )}
+
+      {phase === "notfound" && (
+        <div className="animate-reveal mt-6 rounded-lg border-2 border-border-strong bg-muted/40 p-6">
+          <h2 className="text-xl font-semibold">No such credential</h2>
+          <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+            Nothing has ever been issued to that address under that document hash. Either the code is wrong, or the
+            credential it refers to was never recorded on this contract.
+          </p>
+          <Button variant="outline" size="sm" className="mt-4" onClick={reset}>
+            <RotateCcw className="h-4 w-4" aria-hidden="true" />
+            Start over
+          </Button>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------ verdict */}
+      {phase === "done" && record && (
+        <div className="animate-reveal mt-6 space-y-5">
+          <section
+            className={`rounded-lg border-2 p-5 sm:p-6 ${
+              meta.isGood ? "border-success/40 bg-success/5" : "border-border-strong bg-muted/40"
+            }`}
+            aria-live="polite"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex min-w-0 items-start gap-3">
+                <VerdictIcon className={`mt-0.5 h-7 w-7 shrink-0 ${meta.textClass}`} aria-hidden="true" />
+                <div className="min-w-0">
+                  <h2 className={`text-2xl font-semibold tracking-tight ${meta.textClass}`}>{meta.label}</h2>
+                  <p className="mt-1 text-sm text-foreground/80">{meta.description}</p>
+                </div>
               </div>
-            ) : (
-              <div className="relative w-full aspect-square bg-muted rounded-lg overflow-hidden">
-                <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
+              <Button variant="outline" size="sm" onClick={reset}>
+                <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                New check
+              </Button>
+            </div>
+
+            <div className="rule-engraved my-5" />
+
+            <dl className="grid gap-5 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <dt className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Issued by</dt>
+                <dd className="mt-1">
+                  <div className="font-serif text-lg font-semibold">{record.issuerName}</div>
+                  <div className="mt-1">
+                    <AddressChip address={record.issuer} size="sm" />
+                  </div>
+                </dd>
               </div>
+
+              <div>
+                <dt className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Credential</dt>
+                <dd className="mt-1 text-sm">
+                  {record.metadata ? (
+                    <>
+                      <span className="font-medium">{record.metadata.title}</span>
+                      {record.metadata.type && (
+                        <span className="ml-2 capitalize text-muted-foreground">{record.metadata.type}</span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                      <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+                      Encrypted — no key supplied
+                    </span>
+                  )}
+                </dd>
+              </div>
+
+              <div>
+                <dt className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Holder</dt>
+                <dd className="mt-1">
+                  <AddressChip address={record.holder} name={record.metadata?.holderName} size="sm" />
+                </dd>
+              </div>
+
+              <div>
+                <dt className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Issued</dt>
+                <dd className="mt-1 text-sm tabular-nums">{formatDate(record.issuedAt)}</dd>
+              </div>
+
+              <div>
+                <dt className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Expires</dt>
+                <dd className={`mt-1 text-sm tabular-nums ${status === "expired" ? "font-medium text-warning" : ""}`}>
+                  {record.expiresAt ? formatDate(record.expiresAt) : "Never"}
+                </dd>
+              </div>
+
+              {record.metadata?.description && (
+                <div className="sm:col-span-2">
+                  <dt className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Details</dt>
+                  <dd className="mt-1 text-sm leading-relaxed">{record.metadata.description}</dd>
+                </div>
+              )}
+            </dl>
+          </section>
+
+          {/* The strongest claim gets its own panel */}
+          <DocumentCheck documentHash={record.documentHash} />
+
+          <ProofPanel title="Proof" description="what this verdict was read from">
+            <ProofRow label="Document hash">
+              <HashDisplay value={record.documentHash} variant="block" />
+            </ProofRow>
+            {record.metadataURI && (
+              <ProofRow label="Metadata CID">
+                <HashDisplay value={record.metadataURI} href={ipfsUrl(record.metadataURI)} variant="block" />
+              </ProofRow>
             )}
-            {/* Canvas is only used for frame capture — never shown */}
-            <canvas ref={canvasRef} className="hidden" />
-          </div>
-        </DialogContent>
-      </Dialog>
+            <ProofRow label="Contract">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <HashDisplay value={CONTRACT_ADDRESS} href={contractUrl()} lead={8} tail={6} />
+                <a
+                  href={explorerBlockUrl(DEPLOYMENT_BLOCK)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                >
+                  Sepolia
+                  <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                </a>
+              </div>
+            </ProofRow>
+          </ProofPanel>
+
+          {record.metadataURI && (
+            <ProofPanel title="What is actually stored" description="ciphertext vs. decrypted">
+              <CiphertextProof metadataURI={record.metadataURI} decrypted={record.metadata} />
+            </ProofPanel>
+          )}
+        </div>
+      )}
+
+      {/* --------------------------------------------------- how it works */}
+      {phase === "idle" && (
+        <section className="mt-12" aria-labelledby="how-heading">
+          <h2 id="how-heading" className="text-sm font-semibold">
+            How verification works
+          </h2>
+
+          <ol className="mt-4 grid gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-3">
+            {HOW_IT_WORKS.map((step, index) => {
+              const Icon = step.icon;
+              return (
+                <li key={step.title} className="bg-background p-5">
+                  <div className="flex items-center gap-2.5">
+                    <span className="grid h-7 w-7 place-items-center rounded-md border border-border bg-muted">
+                      <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                    </span>
+                    <span className="font-mono text-[11px] text-muted-foreground">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                  </div>
+                  <h3 className="mt-3 text-sm font-medium">{step.title}</h3>
+                  <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{step.body}</p>
+                </li>
+              );
+            })}
+          </ol>
+
+          <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+            Steps two and three are independent. The chain tells you the credential is real and still valid; the hash
+            tells you the paper in your hand is the one it was issued for. A forged document fails the second check even
+            when the first passes.
+          </p>
+        </section>
+      )}
     </div>
   );
 }
