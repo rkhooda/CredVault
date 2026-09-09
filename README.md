@@ -221,6 +221,25 @@ forge script DeployVault --root Backend-Contracts \
   --rpc-url "$SEPOLIA_RPC_URL" --account deployer --broadcast
 ```
 
+### Authorising another institution
+
+`ISSUER_ROLE` lives on the contract, not in this repository — a wallet gets it with one
+admin-signed transaction, and until then the institution portal refuses it at the door.
+Run this from the wallet holding `DEFAULT_ADMIN_ROLE`:
+
+```bash
+cast send 0x26Eb4c3f71ab6735e6c4b5a04D88fa902c46C8B3 \
+  "registerIssuer(address,string,string,string)" \
+  <ISSUER_ADDRESS> "Institution Name" "ACCREDITATION-ID" "https://institution.example" \
+  --rpc-url "$SEPOLIA_RPC_URL" --account deployer
+```
+
+Both accounts need Sepolia ETH for gas. `deregisterIssuer(address)` reverses it; credentials
+already issued stay valid. Without a local Foundry setup the same call is available from the
+verified source on
+[Blockscout](https://eth-sepolia.blockscout.com/address/0x26Eb4c3f71ab6735e6c4b5a04D88fa902c46C8B3?tab=write_contract),
+signed with MetaMask.
+
 ## Deployment
 
 The app is a static build plus one edge function, deployed on **Vercel**.
